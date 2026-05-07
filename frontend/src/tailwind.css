@@ -174,17 +174,28 @@
   }
 
   #changai-chatbot-root .chat-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(109, 79, 194, 0.35) transparent;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(109, 79, 194, 0.68) rgba(109, 79, 194, 0.16);
+    scrollbar-gutter: stable;
   }
 
   #changai-chatbot-root .chat-scrollbar::-webkit-scrollbar {
-    width: 8px;
+    width: 10px;
+  }
+
+  #changai-chatbot-root .chat-scrollbar::-webkit-scrollbar-track {
+    background: rgba(109, 79, 194, 0.12);
+    border-radius: 9999px;
   }
 
   #changai-chatbot-root .chat-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(109, 79, 194, 0.4), rgba(109, 79, 194, 0.2));
+    background: linear-gradient(180deg, rgba(109, 79, 194, 0.78), rgba(109, 79, 194, 0.42));
     border-radius: 9999px;
+    border: 2px solid rgba(109, 79, 194, 0.12);
+  }
+
+  #changai-chatbot-root .chat-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(109, 79, 194, 0.9), rgba(109, 79, 194, 0.52));
   }
 
   #changai-chatbot-root .chat-shell {

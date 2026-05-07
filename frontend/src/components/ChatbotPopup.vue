@@ -21,7 +21,7 @@
       <TabBar v-model="localTab" :debugEnabled="debugEnabled" />
     </div>
 
-    <div class="chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/60 px-4 py-4 max-[900px]:px-3.5 max-[900px]:py-3.5 max-[600px]:px-3 max-[600px]:py-3" ref="chatBodyRef">
+    <div class="chat-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-scroll bg-slate-50/60 px-4 py-4 max-[900px]:px-3.5 max-[900px]:py-3.5 max-[600px]:px-3 max-[600px]:py-3" ref="chatBodyRef" @scroll.passive="updateScrollButtonVisibility">
       <div class="min-w-0">
         <ChatTab
           v-if="localTab === 'chat'"
@@ -44,6 +44,20 @@
       </div>
     </div>
 
+    <button
+      v-if="showScrollButton"
+      type="button"
+      class="absolute right-4 z-20 grid h-9 w-9 place-items-center rounded-full border border-brand-200/70 bg-white/95 text-brand-600 shadow-[0_14px_26px_-16px_rgba(15,23,42,0.65)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-300 hover:text-brand-700 focus:outline-none"
+      :class="localTab !== 'settings' ? 'bottom-[calc(90px+env(safe-area-inset-bottom))] sm:bottom-[96px]' : 'bottom-4 sm:bottom-5'"
+      title="Scroll to bottom"
+      aria-label="Scroll to bottom"
+      @click="scrollContentToBottom"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M7 10l5 5 5-5"/>
+      </svg>
+    </button>
+
     <div v-if="localTab !== 'settings'" class="border-t border-slate-200/80 bg-white/90 px-3 py-3 pb-[calc(12px+env(safe-area-inset-bottom))] backdrop-blur-sm sm:px-4 sm:py-4">
       <ChatForm
         ref="chatFormRef"
@@ -58,7 +72,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import ChatHeader from './ChatHeader.vue'
 import TabBar from './TabBar.vue'
 import ChatTab from './ChatTab.vue'
@@ -91,6 +105,42 @@ const chatBodyRef = ref(null)
 const chatFormRef = ref(null)
 const localTab = ref(props.activeTab)
 const windowMode = ref('default')
+const showScrollButton = ref(false)
+
+const SCROLL_BUTTON_THRESHOLD = 56
+
+function updateScrollButtonVisibility() {
+  const el = chatBodyRef.value
+  if (!props.isOpen || !el) {
+    showScrollButton.value = false
+    return
+  }
+
+  const maxScrollable = el.scrollHeight - el.clientHeight
+  if (maxScrollable <= 4) {
+    showScrollButton.value = false
+    return
+  }
+
+  const distanceFromBottom = maxScrollable - el.scrollTop
+  showScrollButton.value = distanceFromBottom > SCROLL_BUTTON_THRESHOLD
+}
+
+function scrollContentToBottom() {
+  const el = chatBodyRef.value
+  if (!el) return
+
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  setTimeout(() => {
+    updateScrollButtonVisibility()
+  }, 220)
+}
+
+function scheduleScrollVisibilityUpdate() {
+  nextTick(() => {
+    updateScrollButtonVisibility()
+  })
+}
 
 function cycleWindowMode() {
   if (windowMode.value === 'default') {
@@ -139,7 +189,10 @@ const popupClasses = computed(() => {
   ]
 })
 
-watch(() => props.activeTab, (val) => { localTab.value = val })
+watch(() => props.activeTab, (val) => {
+  localTab.value = val
+  scheduleScrollVisibilityUpdate()
+})
 
 // Auto-focus the chat input whenever the popup is opened so that
 // keyboard events are routed through our shadow DOM (preventing
@@ -148,22 +201,40 @@ watch(() => props.isOpen, (isOpen) => {
   if (isOpen && localTab.value !== 'settings') {
     nextTick(() => chatFormRef.value?.focus())
   }
+
+  scheduleScrollVisibilityUpdate()
 })
-watch(localTab, (val) => { emit('update:activeTab', val) })
+watch(localTab, (val) => {
+  emit('update:activeTab', val)
+  scheduleScrollVisibilityUpdate()
+})
+
+watch(
+  () => [props.chatHistory.length, props.supportHistory.length, props.debugLogs.length, props.currentDebug],
+  () => {
+    scheduleScrollVisibilityUpdate()
+  },
+)
+
 watch(
   () => props.debugEnabled,
   (enabled) => {
     if (!enabled && localTab.value === 'debug') {
       localTab.value = 'chat'
     }
+
+    scheduleScrollVisibilityUpdate()
   }
 )
+
+onMounted(() => {
+  scheduleScrollVisibilityUpdate()
+})
 
 defineExpose({
   scrollToBottom() {
     nextTick(() => {
-      const el = chatBodyRef.value
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      scrollContentToBottom()
     })
   },
 })

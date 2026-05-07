@@ -105,10 +105,10 @@ def validate_sql_schema(sql: str, dialect: str = "mysql") -> dict:
         ast = sqlglot.parse_one(sql, read=dialect)
         used_tables = {table.name for table in ast.find_all(exp.Table)}
         small_mapping = {
-    table: mapping_data[table]
-    for table in used_tables
-    if table in mapping_data
-}
+            table: mapping_data[table]
+            for table in used_tables
+            if table in mapping_data
+        }
 
         for table in ast.find_all(exp.Table):
             if table.name and table.name not in mapping_data:
