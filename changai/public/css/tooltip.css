@@ -48,25 +48,63 @@
     position: absolute;
     opacity: 0;
     pointer-events: auto;
+
     top: calc(100% + 8px);
-    /* Adjust distance below the icon */
     left: 50%;
     transform: translateX(-50%);
-    background-color: #007BFF;
-    color: white;
+
+    background: #1e293b;
+    color: #f8fafc;
+
     text-align: left;
-    /* Align text to the left for better readability */
-    padding: 15px;
-    border-radius: 6px;
-    font-size: 12px;
-    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
-    transition: opacity 0.3s ease, max-height 0.3s ease;
-    z-index: 1000;
-    max-width: 300px;
-    min-width: 200px;
-    max-height: none;
-    overflow: hidden;
+
+    padding: 12px 14px;
+    border-radius: 10px;
+
+    font-size: 13px;
+    line-height: 1.6;
+
+    white-space: normal;
+    word-break: break-word;
     word-wrap: break-word;
+
+    min-width: 200px;
+    max-width: 340px;
+
+    overflow: hidden;
+
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+}
+
+.changai-sync-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 6px;
+    border-radius: 6px;
+    height: 20px;
+    margin-left: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.badge-green {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-yellow {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-red {
+    background: #fee2e2;
+    color: #991b1b;
 }
 
 .custom-tooltip::after {
@@ -104,4 +142,15 @@
     /* ADD THIS — this is why tooltip clips */
     position: relative !important;
     /* ADD THIS — ensure anchor is correct */
+}
+
+.custom-tooltip::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent transparent #1e293b transparent;
 }

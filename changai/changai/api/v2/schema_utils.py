@@ -121,21 +121,74 @@ def validate_sql_schema(sql: str, dialect: str = "mysql") -> dict:
         return {"ok": False, "error": str(e)}
 
 from frappe.utils import add_to_date, today, date_diff, days_diff
+MASTER_DOCTYPES = [
+    "Customer",
+    "Supplier",
+    "Item",
+    "Warehouse",
+    "Company",
+    "Account"
+]
 
 @frappe.whitelist(allow_guest=False)
-def checkmaster_updates():
-    file_name = "master_data.yaml"
+def check_file_updates(file_name):
     payload = _read_filedoctype(file_name, RAG_FOLDER)
+
     if not payload:
-        return {"update": False, "data": False}
-    if not payload.get("data") or not payload.get("_meta"):
-        return {"data": False}
+        return {
+            "update_status": False,
+            "data": False,
+            "days": 0,
+            "last_sync":None
+        }
+
     meta = payload.get("_meta") or {}
-    lastdate = meta["last_sync"]
-    docs = frappe.get_all("DocType",filters={"modified":[">",lastdate]})
-    if len(docs)>0:
-        return {"update": False,"data":True,"days": days_diff(today(),lastdate)}
-    return {"update": True,"data":True}
+    last_sync = meta.get("last_sync")
+
+    if not last_sync:
+        return {
+            "update": False,
+            "data": True,
+            "days": 0,
+            "last_sync":None
+        }
+
+    docs = []
+
+    if file_name == "schema.yaml":
+        changed = frappe.db.exists(
+            "DocType",
+            {
+                "modified": [">", last_sync]
+            }
+        )
+
+    elif file_name == "master_data.yaml":
+        changed =False
+        for doc in MASTER_DOCTYPES:
+                if frappe.db.exists(doc, {"modified": [">", last_sync]}):
+                    changed =True
+                    break
+                    # docs.extend(updated_docs)
+        # For master data, checking DocType modified is not enough.
+        # You should check your master doctypes/records instead.
+    else:
+        changed = False
+    days = days_diff(today(), last_sync)
+
+    if changed:
+        return {
+            "update_status": False,
+            "data": True,
+            "days": days,
+            "last_sync":last_sync      }
+
+    return {
+        "update_status": True,
+        "data": True,
+        "days": days,
+        "last_sync":last_sync
+    }
 
 
 @frappe.whitelist()
@@ -185,6 +238,6 @@ def convert_yaml_schema_to_sqlglot_meta() -> dict:
 from frappe import _
 @frappe.whitelist(allow_guest=False)
 def test():
-        res=checkmaster_updates()
+        res=check_file_updates("master_data.yaml")
         if not res.get("update"):
             frappe.throw(_("Please update master data for entity recognition to work. Click on Update Master Data button in Training tab in ChangAI Settings.<br>Check Quick Start Guide Here 👇"))

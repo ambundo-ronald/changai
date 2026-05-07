@@ -1,8 +1,22 @@
 // Copyright (c) 2026, ERPGulf and contributors
 // For license information, please see license.txt
 frappe.ui.form.on("ChangAI Settings", {
-    refresh(frm) {
-        function applyTooltips(context, fieldsWithTooltips) {
+    refresh: async function (frm) {
+        const schema_wrapper = frm.fields_dict.update_schema_file.$wrapper;
+        const master_wrapper = frm.fields_dict.update_masterdata_file.$wrapper;
+        setup_badge_wrapper(master_wrapper);
+        setup_badge_wrapper(schema_wrapper);
+        const [
+            master_status,
+            schema_status
+        ] = await Promise.all([
+            check_updates("master_data.yaml"),
+            check_updates("schema.yaml")
+        ]);
+        add_or_update_badge(master_wrapper, master_status.badge_class, master_status.badge_text);
+        add_or_update_badge(schema_wrapper, schema_status.badge_class, schema_status.badge_text);
+
+        async function applyTooltips(context, fieldsWithTooltips) {
             fieldsWithTooltips.forEach((field) => {
                 let fieldContainer;
                 if (context.fields_dict?.[field.fieldname]) {
@@ -68,93 +82,78 @@ frappe.ui.form.on("ChangAI Settings", {
         const fieldsWithTooltips = [
             {
                 fieldname: "remote",
-                text: `
-                    Enable this to use a remote server for AI processing instead of the local server.
-                `,
+                text: `Use a remote AI server instead of the local server.`,
             },
             {
                 fieldname: "from_language",
-                text: `
-                   Set the default source language for AI translation.This will be automatically used as the translation input language whenever you use the AI Translate option on any doctype — no need to set it again each time.
-                `,
+                text: `Default source language used for AI translation.`,
             },
             {
                 fieldname: "to_language",
-                text: `
-                    Set the default target language for AI translation. Whenever AI Translate is triggered on any doctype, the field value will be translated into this language and saved to your selected target field automatically.
-                `,
+                text: `Default target language used for AI translation.`,
             },
             {
                 fieldname: "gemini_api_key",
-                text: `
-                    Enter your Gemini API key from Google AI Studio. This is required to use Gemini as your AI provider (Free Tier).Get your key at: https://aistudio.google.com/app/apikey
-                `,
+                text: `Gemini API key from Google AI Studio (Free Tier).`,
             },
             {
                 fieldname: "retain_memory",
-                text: `
-                    When enabled, the AI will remember the context of previous messages within the same conversation session.
-                `,
+                text: `Allows the AI to remember previous conversation context.`,
             },
             {
                 fieldname: "gemini_location",
-                text: `
-                    Enter the Google Cloud region where your Gemini Paid Tier service is hosted. Example: us-central1.
-                `,
+                text: `Google Cloud region for Gemini Paid Tier. Example: us-central1.`,
             },
             {
                 fieldname: "gemini_project_id",
-                text: `
-                    Enter your Google Cloud Project ID linked to the Gemini Paid Tier service account.
-                `,
+                text: `Google Cloud Project ID for Gemini Paid Tier.`,
             },
             {
                 fieldname: "gemini_json_content",
-                text: `
-                    Paste your Google Cloud Service Account credentials JSON here. This is required to authenticate with Gemini Paid Tier.
-                `,
+                text: `Google Cloud Service Account JSON credentials.`,
             },
             {
                 fieldname: "llm",
-                text: `
-                    Select the Large Language Model (LLM) to use for generating SQL queries and AI responses.
-                `,
+                text: `Select the AI model used for SQL generation and responses.`,
             },
             {
                 fieldname: "result_formatting",
-                text: `
-                    Select how AI query results are presented in the chat."Model" formats the response in a friendly, readable way using AI. "Local" uses code-based formatting and may show technical output..
-                `,
+                text: `"Model" gives AI-formatted responses. "Local" uses simple code-based formatting.`,
             },
             {
                 fieldname: "update_masterdata_file",
                 text: `
-                    Sync and update the master data file that the AI uses to understand your business data. Run this whenever your key business records change.
-                `,
+            <b>Last updated:</b>
+            <span style="color:#ffd43b;font-weight:700;">
+            ${master_status.formatted_date}
+            </span><br><br>
+
+            Updates the business master data used by ChangAI.<br>
+            Run this when important records change.
+        `,
             },
             {
                 fieldname: "choose_file_size",
-                text: `
-                    Set the number of records to use for training the AI model.Choose a value between 1000 and 1500.
-                `,
+                text: `Number of records used for training data generation.`,
             },
             {
                 fieldname: "update_schema_file",
                 text: `
-                    Sync the latest database schema so the AI knows your current doctype structure and fields. Run this after adding or modifying any doctypes.
-                `,
+            <b>Last updated:</b>
+            <span style="color:#ffd43b;font-weight:700;">
+                ${schema_status.formatted_date}
+            </span><br><br>
+
+            Updates the latest ERPNext schema and fields for ChangAI.
+        `,
             },
             {
                 fieldname: "openai_api_key",
-                text: `
-        API key for OpenAI services. Used for tasks like training data generation or fallback LLM operations.
-    `,
+                text: `OpenAI API key for training and fallback AI tasks.`,
             },
             {
                 fieldname: "claude_api_key",
-                text: `
-        API key for Claude (Anthropic). Used for schema enrichment, field descriptions, and optional data generation.
-    `,
+                text: `Claude API key for schema enrichment and data generation.`,
             }
         ];
         applyTooltips(frm, fieldsWithTooltips);
@@ -240,4 +239,69 @@ function create_data_from_selected_rows(frm) {
             console.log("Response:", r.message);
         }
     });
+}
+
+function setup_badge_wrapper(wrapper) {
+    wrapper.css({
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "10px"
+    });
+}
+
+function add_or_update_badge(wrapper, badge_class, badge_text) {
+    wrapper.find(".changai-sync-badge").remove();
+
+    wrapper.find("button").after(`
+        <span class="changai-sync-badge ${badge_class}">
+            ${badge_text}
+        </span>
+    `);
+}
+
+async function check_updates(file_name) {
+
+    const r = await frappe.call({
+        method: "changai.changai.api.v2.schema_utils.check_file_updates",
+        args: {
+            file_name: file_name
+        }
+    });
+    const update = r.message?.update_status;
+    const data = r.message?.data;
+    const days = r.message?.days ?? 0;
+    const last_sync = r.message?.last_sync;
+    const date = frappe.datetime.str_to_obj(last_sync);
+    const formatted_date = date.toLocaleString();
+    let badge_class = "badge-yellow";
+    let badge_text = "Unknown";
+
+
+    if (update === false) {
+        if (days > 1) {
+            badge_class = "badge-yellow";
+            badge_text = `${formatted_date}`
+        }
+        else {
+            badge_class = "badge-green";
+            badge_text = `${formatted_date}`
+        }
+
+    }
+    if (update === true) {
+        if (data) {
+            badge_class = "badge-green";
+            badge_text = `${formatted_date}`
+        }
+        else {
+            badge_class = "badge-red";
+            badge_text = "Not updated yet"
+        }
+    }
+    return {
+        badge_class,
+        badge_text,
+        days,
+        formatted_date
+    };
 }

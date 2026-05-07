@@ -18,7 +18,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from google import genai
 from google.genai import types
-from changai.changai.api.v2.schema_utils import validate_sql_schema,_load_mapping_data,checkmaster_updates
+from changai.changai.api.v2.schema_utils import validate_sql_schema,_load_mapping_data,check_file_updates
 from google.oauth2 import service_account
 
 from werkzeug.wrappers import Response
@@ -1442,7 +1442,9 @@ def remote_entity_embedder(q: str) -> Union[list, str]:
 #         _VS_MASTER = FAISS.load_local(master_vs_path, emb, allow_dangerous_deserialization=True)
 #     return _VS_MASTER
 
-
+settingsUrl = frappe.utils.get_url(
+    "/app/changai-settings/ChangAI%20Settings"
+)
 @frappe.whitelist(allow_guest=False)
 def get_master_vs():
     global _VS_MASTER
@@ -1455,10 +1457,19 @@ def get_master_vs():
         master_vs_path = frappe.get_site_path(
             "private", "changai", "fvs_stores", "erpnext", "masterdata_fvs"
         )
-
         if not os.path.exists(master_vs_path):
-            frappe.throw(_(f"FAISS MASTER store not found at {0}.Please click on Update Master Data button in Training tab in ChangAI Settings"
-                           f"Check Quick Start Guide Here 👇:\n {1}").format(master_vs_path, CHANGAI_GUIDE_LINK))
+            frappe.throw(_(
+                "FAISS MASTER store not found at {0}.<br><br>"
+                "Please open "
+                "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
+                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+                "Check Quick Start Guide Here 👇<br>"
+                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a>"
+            ).format(
+                master_vs_path,
+                settingsUrl,
+                CHANGAI_GUIDE_LINK
+            ))
 
         _VS_MASTER = FAISS.load_local(
             master_vs_path,
@@ -1553,13 +1564,29 @@ def detect_specific_entities(state: SQLState) -> SQLState:
         return {**state, "entity_cards": [], "entity_raw": None}
 
     try:
-        res=checkmaster_updates()
+        res = check_file_updates("master_data.yaml")
+
         if not res.get("data"):
-            frappe.throw(_("Master Data do not exist. Bcs of that result may not come accurate. For better accuracy please update by clicking on <b>Update Master Data</b> button in Training tab in ChangAI Settings.<br>Check Quick Start Guide Here 👇:\n"
-            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>").format(res.get("days"), CHANGAI_GUIDE_LINK))   
-        if not res.get("update") and res.get("days")>0:
-            frappe.throw(_("Your master data is {0} days old. Bcs of that result may not come accurate. For better accuracy please update by clicking on <b>Update Master Data</b> button in Training tab in ChangAI Settings.<br>Check Quick Start Guide Here 👇:\n"
-            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>").format(res.get("days"), CHANGAI_GUIDE_LINK))
+            frappe.throw(_(
+                "Master Data does not exist. Because of this, results may not be accurate. "
+                "For better accuracy, please open "
+                "<a href='{0}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
+                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+                "Check Quick Start Guide Here 👇:<br>"
+                "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>"
+            ).format(settingsUrl, CHANGAI_GUIDE_LINK))
+
+        if not res.get("update_status") and res.get("days", 0) > 0:
+            frappe.throw(_(
+                "Your master data is {0} days old. "
+                "Because of this, results may not be accurate. "
+                "For better accuracy, please open "
+                "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
+                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+                "Check Quick Start Guide Here 👇:<br>"
+                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>"
+            ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK))
+
         out = call_entity_retriever(q)
         return {
             **state,
