@@ -197,11 +197,11 @@ def _extract_existing_keys(data: List[Any]) -> Set[tuple]:
     return keys
 
 
-def _build_master_data_row(entity_type: str, entity_id: str) -> Dict[str, Any]:
+def _build_master_data_row(entity_type: str, entity_id: str,title_field:str) -> Dict[str, Any]:
     return {
         "entity_type": entity_type,
         "entity_id": entity_id,
-        "filters": {"field": "name", "value": entity_id},
+        "filters": {"field": title_field if title_field else "name", "value": entity_id},
     }
 
 
@@ -209,30 +209,6 @@ def _get_master_data_filters(last_sync: Optional[str]) -> Dict[str, Any]:
     if not last_sync:
         return {}
     return {"creation": [">", last_sync]}
-
-
-def _sync_module_master_data(
-    mod: str,
-    data: List[Dict[str, Any]],
-    existing_keys: Set[tuple],
-    base_filters: Dict[str, Any],
-) -> tuple[int, int]:
-    entity_type = f"tab{mod}"
-    records = frappe.get_all(mod, filters=base_filters, fields=["name"])
-
-    added_count = 0
-    fetched_count = len(records)
-
-    for rec in records:
-        key = (entity_type, rec.name)
-        if key in existing_keys:
-            continue
-
-        data.append(_build_master_data_row(entity_type, rec.name))
-        existing_keys.add(key)
-        added_count += 1
-
-    return fetched_count, added_count
 
 
 @frappe.whitelist(allow_guest=False)
@@ -252,7 +228,7 @@ def update_masterdata():
         "message":"Master Data update running in RQ Job"
     }
 
-
+@frappe.whitelist(allow_guest=False)
 def sync_master_data_smart() -> Dict[str, Any]:
     file_name = "master_data.yaml"
     payload = _read_filedoctype(file_name, RAG_FOLDER)
@@ -279,9 +255,13 @@ def sync_master_data_smart() -> Dict[str, Any]:
             for row in existing_rows
             if row.get("entity_id")
         }
-
-        live_records = frappe.get_all(mod, fields=["name"])
-        live_ids = {rec.name for rec in live_records if rec.get("name")}
+        meta_doc = frappe.get_meta(mod)
+        title_field = meta_doc.title_field or "name"
+        fields =["name"]
+        if title_field !="name":
+            fields.append(title_field)
+        live_records = frappe.get_all(mod, fields=fields,limit_page_length=0)
+        live_ids = {rec.get("name") for rec in live_records if rec.get("name")}
 
         fetched_by_module[mod] = len(live_ids)
 
@@ -294,8 +274,10 @@ def sync_master_data_smart() -> Dict[str, Any]:
         added_total += len(added_ids)
         removed_total += len(removed_ids)
 
-        for entity_id in sorted(live_ids):
-            rebuilt_rows.append(_build_master_data_row(entity_type, entity_id))
+        for rec in live_records:
+            entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
+            rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
+            return rebuilt_rows
 
     final_data = rebuilt_rows
 

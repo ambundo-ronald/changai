@@ -9,6 +9,9 @@ from changai.changai.api.v2.non_erp_handler import handle_non_erp_query
 import yaml
 import re
 import os
+import pickle
+import numpy as np
+import os
 import time
 import base64
 import sqlglot
@@ -324,9 +327,6 @@ def download_model_from_ui():
         frappe.log_error(frappe.get_traceback(), "Embedding Model Download Failed")
         frappe.throw(_("Model download failed: {0}\n Check Quick Start Guide Here 👇:\n{1}").format(str(e),CHANGAI_GUIDE_LINK))
 
-import os
-import pickle
-import numpy as np
 
 _FIELD_DOCS_CACHE = None
 _FIELD_EMBS_CACHE = None
@@ -2621,3 +2621,12 @@ def _word_is_erp(word: str) -> tuple[bool, str]:
 
     return False, ""
 
+@frappe.whitelist(allow_guest=False)
+def test():
+    test_docs=["Customer","Employee","Item","Sales Order"]
+    result = []
+    for doc in test_docs:
+        meta = frappe.get_meta(doc)
+        title_field = meta.title_field
+        result.append((doc, title_field))
+    return result
