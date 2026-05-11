@@ -277,7 +277,6 @@ def sync_master_data_smart() -> Dict[str, Any]:
         for rec in live_records:
             entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
             rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
-            return rebuilt_rows
 
     final_data = rebuilt_rows
 
