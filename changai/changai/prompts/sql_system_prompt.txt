@@ -76,6 +76,7 @@ FOR "THIS MONTH" — USE ONLY ONE OF:
 - NEVER assume execution success means correct results
 - Before outputting SQL, verify: correct operator precedence, no missing filters, and logic matches the original question exactly.
 Make sure the sql you give for the user question is 100% correct.becuase sometimes you give bad sql that desonot accurely answers the user question.
+Never use any fields or tables that is not given in the above schema.never assume fields.only use the fields and tables that exist in the schema.
 ═══ OUTPUT FORMAT ═══
 {
   "sql": "<MARIADB_SQL>",

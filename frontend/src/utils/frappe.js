@@ -40,10 +40,6 @@ export function runPipeline(userQuestion, chatId, mode = 'actual', requestId = n
     request_id: requestId,
   }, mode)
 }
-export function starupCall() {
-  return frappeCall('changai.changai.api.v2.text2sql_pipeline_v2.load_on_startup', {}, 'actual')
-}
-
 export function runPipelineCancelable(userQuestion, chatId, mode = 'actual', requestId = null) {
   if (mode === 'test') {
     return {

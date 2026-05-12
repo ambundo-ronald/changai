@@ -99,7 +99,6 @@ async function handleChatSubmit(message) {
   currentDebug.value = null
   if (responseMode.value === 'actual') {
     await loadSettings()
-    starupCall()
   }
 
   chatHistory.value.push({ role: 'user', text: message })
