@@ -36,7 +36,8 @@ class IntelligentStaticResponder:
         self._arabic_detect_re = re.compile(r"[\u0600-\u06FF]")
 
         t1 = time.time()
-        with open(alias_path, "r", encoding="utf-8") as f:  # nosemgrep: path is from frappe.get_app_path, validated in __init__
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+        with open(alias_path, "r", encoding="utf-8") as f:
             alias_map = json.load(f)
         print(f"[non_erp] alias json load: {time.time() - t1:.4f}s")
 
@@ -123,8 +124,8 @@ class IntelligentStaticResponder:
         self.entries.clear()
         self.responses_by_key.clear()
         self.keys.clear()
-
-        with open(self.json_file, "r", encoding="utf-8") as f:  # nosemgrep: path is from frappe.get_app_path, validated in __init__
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+        with open(self.json_file, "r", encoding="utf-8") as f:
             rows = json.load(f)
 
         processed_rows = []
@@ -174,15 +175,15 @@ class IntelligentStaticResponder:
         rows = getattr(self, "_processed_rows_for_pickle", None)
         if rows is None:
             return
-
-        with open(cache_path, "wb") as f:   # nosemgrep: cache_path derived from self.json_file, validated in __init__
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+        with open(cache_path, "wb") as f:
             pickle.dump(rows, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _load_from_pickle(self, cache_path: str) -> None:
         self.entries.clear()
         self.responses_by_key.clear()
         self.keys.clear()
-
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
         with open(cache_path, "rb") as f: # nosemgrep: cache_path derived from self.json_file, validated in __init__
             rows = pickle.load(f)
 

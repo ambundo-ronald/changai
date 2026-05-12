@@ -95,7 +95,6 @@ def _read_file_doc(file_name: str, folder: str = RAG_FOLDER) -> str:
 
 def _load_yaml_from_file_doc(file_name: str) -> Any:
     """Load a YAML file from Frappe File DocType."""
-    
     content = _read_file_doc(file_name)
     return yaml.safe_load(content)
 
@@ -205,8 +204,8 @@ def clean_schema(schema: Dict[str, Any], output_path: str):
                 field for field in fields
                 if field.get("name") not in GENERIC_FIELDS
             ]
-
-    with open(output_path, "w") as f: # nosemgrep: output_path is derived from frappe.get_app_path, not user input
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+    with open(output_path, "w") as f:
         yaml.dump(schema, f, allow_unicode=True, sort_keys=False)
 
     print(f"Cleaned schema written to {output_path}")
@@ -399,11 +398,11 @@ def save_field_matrix(schema_docs, base_dir):
     safe_dir.mkdir(parents=True, exist_ok=True)
 
     np.save(safe_dir / "field_embs.npy", embs)
-
-    with open(safe_dir / "field_docs.pkl", "wb") as f:  # nosemgrep: path validated by _assert_dir_inside_base
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+    with open(safe_dir / "field_docs.pkl", "wb") as f:
         pickle.dump(schema_docs, f)
-
-    with open(safe_dir / "table_to_idx.pkl", "wb") as f:  # nosemgrep: path validated by _assert_dir_inside_base
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+    with open(safe_dir / "table_to_idx.pkl", "wb") as f:
         pickle.dump(table_to_idx, f)
 
 

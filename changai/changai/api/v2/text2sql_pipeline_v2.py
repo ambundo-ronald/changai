@@ -363,9 +363,11 @@ def load_field_matrix():
     if not embs_path.exists():
         frappe.throw(f"Missing field_embs.npy. Rebuild schema FVS first: {embs_path}")
 
-    with open(docs_path, "rb") as f:  # nosemgrep: path validated by _safe_join against app_root
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+    with open(docs_path, "rb") as f:
         docs = pickle.load(f)
 
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
     with open(table_idx_path, "rb") as f:  # nosemgrep: path validated by _safe_join against app_root
         table_to_idx = pickle.load(f)
 
