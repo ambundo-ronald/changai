@@ -25,12 +25,13 @@ from google import genai
 from google.genai import types
 from changai.changai.api.v2.schema_utils import validate_sql_schema,_load_mapping_data,check_file_updates
 from google.oauth2 import service_account
-
+import threading
 from werkzeug.wrappers import Response
 from changai.changai.api.v2.helpdesk_api import(
     create_helpdesk_ticket,
     get_user_tickets
 )
+from typing import Any, Dict, Optional
 import jinja2
 import frappe
 from google.api_core import exceptions as google_exceptions
@@ -58,9 +59,19 @@ _ASSETS_DIR = Path(frappe.get_app_path("changai", "changai", "api", "v2", "asset
 _PROMPTS_DIR = Path(frappe.get_app_path("changai", "changai", "prompts")).resolve()
 CHANGAI_SETTINGS = "ChangAI Settings"
 _ALLOWED_EXT = {".json", ".yaml",".j2", ".yml", ".txt", ".md"}
+# _warmup_done=False
+# def warm_up():
+#     global _warmup_done
+#     try:
+#         import time
+#         time.sleep(3)  # wait for frappe to fully initialize first
+#         frappe.logger().info("ChangAI: background warmup starting...")
+#         load_on_startup()
+#         _warmup_done = True
+#         frappe.logger().info("ChangAI: background warmup complete ✅")
+#     except Exception as e:
+#         frappe.logger().error(f"ChangAI: background warmup failed: {e}")
 
-import frappe
-from typing import Any, Dict, Optional
 
 SQL_REWRITE_PROMPT = """You are an ERP query rewriter and entity detector.
 Return ONLY valid JSON:
@@ -154,8 +165,10 @@ def get_symspell():
 
     dictionary_path = frappe.get_app_path(
         "changai",
-        "utils",
-        "dictionaries",
+        "changai",
+        "api",
+        "v2",
+        "assets",
         "frequency_dictionary_en_82_765.txt"
     )
 
@@ -1035,6 +1048,11 @@ def rewrite_question(state: SQLState) -> SQLState:
         )
         return {**state, "error": str(e)}
 
+# @frappe.whitelist(allow_guest=True)
+# def testing():
+#     res=get_table_vs()
+#     if res:
+#         return True
 def get_table_vs():
     global _VS_TABLE
 
@@ -1069,40 +1087,63 @@ def get_table_vs():
     return _VS_TABLE
 
 
-def get_table_vs_test():
-    global _VS_TABLE
 
-    if _VS_TABLE is None:
-        emb = get_embedding_engine()
-        if emb is None:
-            frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
+# def call_fvs_table_search(q: str) -> List[str]:
+#     hits = get_table_vs().similarity_search(q, k=20)
+#     out, seen = [], set()
+#     for h in hits:
+#         t = h.metadata.get("table")
+#         if t and t not in seen:
+#             seen.add(t)
+#             out.append(t)
+#     return out
 
-        table_vs_path = frappe.get_site_path(
-            "private", "changai", "fvs_stores", "erpnext", "table_fvs"
-        )
+@frappe.whitelist(allow_guest=False)
+def check_memory_status() -> dict:
+    return {
+        "pid": os.getpid(),  # which worker answered
+        "globals": {
+            "embedding_model": _EMBEDDER_INSTANCE is not None,
+            "table_vs": _VS_TABLE is not None,
+            "full_fields_vs": _FULL_FIELDS_VS is not None,
+            "field_docs": _FIELD_DOCS_CACHE is not None,
+            "field_embs": _FIELD_EMBS_CACHE is not None,
+            "table_to_idx": _TABLE_TO_IDX_CACHE is not None,
+            "master_vs": _VS_MASTER is not None,
+            "gemini_client": _GEMINI_CLIENT is not None,
+            "symspell": sym_spell is not None,
+            "keywords": _KEYWORDS_SET is not None,
+        }
+    }
 
-        if not os.path.exists(table_vs_path):
-            frappe.throw(_("FAISS table store not found at {0} <br>"
-            f"Check Quick Start Guide Here 👇:\n {1}").format(table_vs_path,CHANGAI_GUIDE_LINK))
 
-        _VS_TABLE = FAISS.load_local(
-            table_vs_path,
-            emb,
-            allow_dangerous_deserialization=True
-        )
-
-    return _VS_TABLE
+@lru_cache(maxsize=512)
+def _get_cached_embedding(q: str) -> tuple:
+    emb = get_embedding_engine()
+    vec = emb.embed_query(q)
+    return tuple(vec)  # tuple for hashability
 
 
 def call_fvs_table_search(q: str) -> List[str]:
-    hits = get_table_vs().similarity_search(q, k=20)
+    # get cached embedding
+    q_vec = np.array(_get_cached_embedding(q), dtype="float32")
+    
+    # use FAISS index directly instead of similarity_search
+    vs = get_table_vs()
+    scores, indices = vs.index.search(q_vec.reshape(1, -1), k=20)
+    
     out, seen = [], set()
-    for h in hits:
-        t = h.metadata.get("table")
+    for idx in indices[0]:
+        if idx == -1:
+            continue
+        doc_id = vs.index_to_docstore_id[idx]
+        doc = vs.docstore.search(doc_id)
+        t = doc.metadata.get("table")
         if t and t not in seen:
             seen.add(t)
             out.append(t)
     return out
+
 
 
 def _parse_json_list(raw: str) -> List[Any]:
@@ -1188,12 +1229,10 @@ def call_fvs_field_search_global_k(
 
     docs, embs, table_to_idx = load_field_matrix()
 
-    import numpy as np
-
     emb = get_embedding_engine()
 
     q_vec = np.array(
-        emb.embed_query(user_question),
+        _get_cached_embedding(user_question),
         dtype="float32"
     )
 
@@ -1253,162 +1292,6 @@ def call_fvs_field_search_global_k(
         parts.append(f"{table}: " + ", ".join(fields))
 
     return "\n".join(parts)
-
-
-def call_fvs_field_search_grouped(
-    user_question: str,
-    selected_tables: List[str],
-) -> Dict[str, List[Dict[str, Any]]]:
-
-    if not user_question or not selected_tables:
-        return {}
-
-    sub_vs = get_sub_vs(selected_tables)
-    if sub_vs is None:
-        return {}
-
-    hits = sub_vs.similarity_search(user_question, k=20)
-
-    selected_set = set(selected_tables)
-    grouped = {}
-    seen = set()
-
-    for d in hits:
-        meta = getattr(d, "metadata", {}) or {}
-        tbl = meta.get("table")
-        fld = meta.get("field")
-        key = (tbl, fld)
-        if key in seen:
-            continue
-        seen.add(key)
-        row = {"field": fld, "table": tbl}
-
-        join_hint = meta.get("join_hint")
-        if join_hint:
-            row["join_hint"] = join_hint
-
-        options = meta.get("options")
-        if options:
-            row["options"] = options
-
-        grouped.setdefault(tbl, []).append(row)
-
-    return grouped
-
-def get_full_fields_vs_test():
-    global _FULL_FIELDS_VS
-
-    if _FULL_FIELDS_VS is None:
-        emb = get_embedding_engine()
-        if emb is None:
-            frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
-
-        full_fields_vs_path = frappe.get_site_path(
-            "private", "changai", "fvs_stores", "erpnext", "schema_fvs"
-        )
-
-        if not os.path.isdir(full_fields_vs_path):
-            frappe.throw(_("Vector store path not found: {0}"
-            "Check Quick Start Guide Here 👇:\n {1}").format(full_fields_vs_path, CHANGAI_GUIDE_LINK))
-
-        _FULL_FIELDS_VS = FAISS.load_local(
-            full_fields_vs_path,
-            emb,
-            allow_dangerous_deserialization=True
-        )
-
-    return _FULL_FIELDS_VS
-
-
-
-def get_full_fields_vs():
-    global _FULL_FIELDS_VS
-
-    if _FULL_FIELDS_VS is None:
-        emb = get_embedding_engine()
-        if emb is None:
-            frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
-        app_root = frappe.get_app_path("changai")
-        full_fields_vs_path = os.path.join(
-            app_root,
-            "changai", "api", "v2", "fvs_stores", "erpnext", "schema_fvs"
-        )
-
-        if not os.path.isdir(full_fields_vs_path):
-            frappe.throw(_("Vector store path not found: {0} <br>"
-            "Check Quick Start Guide Here 👇:\n {1}").format(full_fields_vs_path,CHANGAI_GUIDE_LINK))
-
-        _FULL_FIELDS_VS = FAISS.load_local(
-            full_fields_vs_path,
-            emb,
-            allow_dangerous_deserialization=True
-        )
-
-    return _FULL_FIELDS_VS
-
-def get_sub_vs(selected_tables: List[str]) -> Optional[FAISS]:
-    """Build sub-index ONCE per unique selected_tables set (cached)."""
-    key = tuple(sorted([t for t in selected_tables if isinstance(t, str)]))
-    if not key:
-        return None
-
-    global _SUB_VS_CACHE
-    if key in _SUB_VS_CACHE:
-        return _SUB_VS_CACHE[key]
-
-    full_vs = get_full_fields_vs()
-    emb = get_embedding_engine()
-
-    selected_set = set(key)
-    doc_dict = getattr(full_vs.docstore, "_dict", {})
-    docs = []
-    for d in doc_dict.values():
-        meta = getattr(d, "metadata", {}) or {}
-        if meta.get("table") in selected_set:
-            docs.append(d)
-    sub = FAISS.from_documents(docs, emb)
-    _SUB_VS_CACHE[key] = sub
-    return sub
-
-
-# def call_fvs_field_search(
-#     user_question: str,
-#     table_name: str,
-#     selected_tables: List[str],
-#     k: int = 40,
-# ) -> List[Dict[str, Any]]:
-#     if not user_question or not table_name:
-#         return []
-#     sub_vs = get_sub_vs(selected_tables)
-#     if sub_vs is None:
-#         return []
-#     # hits = sub_vs.similarity_search(user_question, k=min(60, max(40, k)))
-#     hits = sub_vs.similarity_search(user_question, k=20)
-
-#     results: List[Dict[str, Any]] = []
-#     seen = set()
-#     for d in hits:
-#         meta = getattr(d, "metadata", {}) or {}
-#         tbl = meta.get("table")
-#         fld = meta.get("field")
-#         if tbl != table_name:
-#             continue
-#         key = (tbl, fld)
-#         if key in seen:
-#             continue
-#         seen.add(key)
-#         row = {
-#             "field": fld,"table":tbl
-#         }
-#         if meta.get("join_hint"):
-#             row["join_hint"] = meta.get("join_hint")
-#         if meta.get("options"):
-#             row["options"] = meta.get("options")
-
-#         results.append(row)
-#         if len(results) >= k:
-#             break
-#     return results
 
 
 # Node 1: Retrive with Fiass Vector Store.
@@ -1541,40 +1424,44 @@ settingsUrl = frappe.utils.get_url(
 @frappe.whitelist(allow_guest=False)
 def get_master_vs():
     global _VS_MASTER
+    try:
+        if _VS_MASTER is None:
+            emb = get_embedding_engine()
+            if emb is None:
+                frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
 
-    if _VS_MASTER is None:
-        emb = get_embedding_engine()
-        if emb is None:
-            frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
+            master_vs_path = frappe.get_site_path(
+                "private", "changai", "fvs_stores", "erpnext", "masterdata_fvs"
+            )
+            if not os.path.exists(master_vs_path):
+                frappe.throw(_(
+                    "FAISS MASTER store not found at {0}.<br><br>"
+                    "Please open "
+                    "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
+                    "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+                    "Check Quick Start Guide Here 👇<br>"
+                    "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a>"
+                ).format(
+                    master_vs_path,
+                    settingsUrl,
+                    CHANGAI_GUIDE_LINK
+                ))
 
-        master_vs_path = frappe.get_site_path(
-            "private", "changai", "fvs_stores", "erpnext", "masterdata_fvs"
-        )
-        if not os.path.exists(master_vs_path):
-            frappe.throw(_(
-                "FAISS MASTER store not found at {0}.<br><br>"
-                "Please open "
-                "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
-                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
-                "Check Quick Start Guide Here 👇<br>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a>"
-            ).format(
+            _VS_MASTER = FAISS.load_local(
                 master_vs_path,
-                settingsUrl,
-                CHANGAI_GUIDE_LINK
-            ))
-
-        _VS_MASTER = FAISS.load_local(
-            master_vs_path,
-            emb,
-            allow_dangerous_deserialization=True
-        )
+                emb,
+                allow_dangerous_deserialization=True
+            )
+    except Exception as e:
+        frappe.log_error(f"Error loading master vector store: {e}", "ChangAI Master VS Load Error")
+        _VS_MASTER = None  # Ensure it's 
 
     return _VS_MASTER
 
+
 @frappe.whitelist()
 def local_entity_embedder(q: str) -> List[Dict[str, Any]]:
-    hits = get_master_vs().similarity_search(q, k=10)
+    hits = get_master_vs().similarity_search(q, k=15)
     out, seen = [], set()
     for h in hits:
         entity_type = h.metadata.get("entity_type")
@@ -2566,11 +2453,13 @@ def load_on_startup():
     ]):
         return 
     try:
-        frappe.logger().error(f"ChangAI loading in PID: {os.getpid()}")
+        frappe.log_error(
+            title="ChangAI Warmup started",
+            message=frappe.get_traceback()  # full stack trace
+        )
         get_symspell()
         get_embedding_engine()
         get_table_vs()
-        get_full_fields_vs()
         load_field_matrix()
         gemini_client()
         get_master_vs()
@@ -2578,8 +2467,15 @@ def load_on_startup():
         frappe.logger().info("ChangAI: All components loaded into memory")
         config = ChangAIConfig.get()
         get_polly_client(config)
+        frappe.log_error(
+        title="ChangAI Warmup Completed",
+        message=frappe.get_traceback()  # full stack trace
+    )
     except Exception as e:
-        frappe.logger().error(f"ChangAI startup load failed: {e}")
+        frappe.log_error(
+        title="ChangAI Warmup Failed",
+        message=frappe.get_traceback()  # full stack trace
+    )
 
 
 def _init_keywords():

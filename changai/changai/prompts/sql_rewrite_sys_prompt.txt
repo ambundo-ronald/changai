@@ -77,3 +77,5 @@ STRICT RULES:
 - Never invent schema elements.
 - Always return any one clear user-readable business field, not only technical IDs, unless explicitly requested.
 - If the query is ambiguous, ask for clarification and set "clarify": true.
+- this is very importnat. Do not map user intent to non-existent fields. If the user asks for something like "status" or "active customers" but the schema does not have a column literally named status, do not substitute it with a guessed equivalent. Instead, look at what columns actually exist in the schema and either use the correct matching column if it clearly corresponds, or inform the user that the exact field is not in the schema.
+

@@ -2,7 +2,7 @@
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import ChatbotToggler from './components/ChatbotToggler.vue'
 import ChatbotPopup from './components/ChatbotPopup.vue'
-import { runPipelineCancelable, callSupportBot, getSettingsDetails } from './utils/frappe.js'
+import { starupCall, runPipelineCancelable, callSupportBot, getSettingsDetails } from './utils/frappe.js'
 import { getOrCreateChatId, getPollyPreference, setPollyPreference } from './utils/session.js'
 import { normalizeBotText, getErrorText, safeStringify } from './utils/helpers.js'
 const showChatbot = ref(false)

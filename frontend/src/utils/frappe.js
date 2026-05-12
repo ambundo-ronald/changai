@@ -40,7 +40,6 @@ export function runPipeline(userQuestion, chatId, mode = 'actual', requestId = n
     request_id: requestId,
   }, mode)
 }
-
 export function runPipelineCancelable(userQuestion, chatId, mode = 'actual', requestId = null) {
   if (mode === 'test') {
     return {

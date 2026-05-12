@@ -603,5 +603,3 @@ def handle_non_erp_query(user_input: str) -> dict:
             "total_seconds": round(total_seconds, 6),
         }
     }
-
-handle_non_erp_query("Hye whtassap??>s;wd")
