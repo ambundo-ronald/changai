@@ -1422,7 +1422,6 @@ def build_hnsw_index(embeddings):
     
     return index
 
-@frappe.whitelist(allow_guest=True)
 def call_retrieve_multi_line(user_question: str, request_id: str) -> Dict[str, Any]:
     try:
         top_tables = call_fvs_table_search(user_question, request_id)
