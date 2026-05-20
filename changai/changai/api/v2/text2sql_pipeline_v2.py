@@ -47,7 +47,7 @@ from frappe import _
 from pathlib import Path
 import numpy as np
 from typing import List, Dict, Any
-from symspellpy.symspellpy import SymSpell
+# from symspellpy.symspellpy import SymSpell
 sym_spell = None
 _GEMINI_CLIENT = None
 _GEMINI_CONFIG = None
@@ -153,32 +153,32 @@ STRICT RULES:
 - Never invent schema elements.
 - Always return any one clear user-readable business field, not only technical IDs, unless explicitly requested.
 - If the query is ambiguous, ask for clarification and set "clarify": true."""
-def get_symspell():
-    global sym_spell
+# def get_symspell():
+#     global sym_spell
 
-    if sym_spell is not None:
-        frappe.logger().info(f"SymSpell already loaded, skipping PID: {os.getpid()}")
-        return sym_spell
+#     if sym_spell is not None:
+#         frappe.logger().info(f"SymSpell already loaded, skipping PID: {os.getpid()}")
+#         return sym_spell
 
-    frappe.logger().error(f"SymSpell loading NOW in PID: {os.getpid()}") 
+#     frappe.logger().error(f"SymSpell loading NOW in PID: {os.getpid()}") 
 
-    sym_spell = SymSpell(max_dictionary_edit_distance=4, prefix_length=7)
+#     sym_spell = SymSpell(max_dictionary_edit_distance=4, prefix_length=7)
 
-    dictionary_path = frappe.get_app_path(
-        "changai",
-        "changai",
-        "api",
-        "v2",
-        "assets",
-        "frequency_dictionary_en_82_765.txt"
-    )
+#     dictionary_path = frappe.get_app_path(
+#         "changai",
+#         "changai",
+#         "api",
+#         "v2",
+#         "assets",
+#         "frequency_dictionary_en_82_765.txt"
+#     )
 
-    sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
+#     sym_spell.load_dictionary(dictionary_path, term_index=0, count_index=1)
 
-    for kw in BUSINESS_KEYWORDS:
-        sym_spell.create_dictionary_entry(kw.lower(), 1000)
+#     for kw in BUSINESS_KEYWORDS:
+#         sym_spell.create_dictionary_entry(kw.lower(), 1000)
 
-    return sym_spell
+#     return sym_spell
 
 @lru_cache(maxsize=512)
 def is_child_table(table: str) -> bool:
@@ -1035,12 +1035,6 @@ class SQLState(TypedDict, total=False):
     selected_fields: str
 
 
-def correct_spelling(text: str) -> str:
-    sym = get_symspell()
-    suggestions = sym.lookup_compound(text, max_edit_distance=2)
-    return suggestions[0].term if suggestions else text
-
-
 def fill_sql_prompt(question: str, context: str) -> str:
     return SQL_PROMPT.format(question=question, context=context)
 
@@ -1169,8 +1163,6 @@ def guardrail_router(state: SQLState) -> SQLState:
     request_id = state.get("request_id")
     chat_id = state.get("session_id")
     raw_q = state.get("question") or ""
-    # q = str(raw_q).lower().strip()
-    # q_corrected = correct_spelling(q)
     try:
         is_erp= is_erp_query(raw_q,BUSINESS_KEYWORDS,80)
         if is_erp:
@@ -1396,10 +1388,10 @@ def check_memory_status() -> dict:
                 "loaded": _GEMINI_CLIENT is not None,
                 "id": id(_GEMINI_CLIENT),
             },
-            "symspell": {
-                "loaded": sym_spell is not None,
-                "id": id(sym_spell),
-            },
+            # "symspell": {
+            #     "loaded": sym_spell is not None,
+            #     "id": id(sym_spell),
+            # },
             "keywords": {
                 "loaded": _KEYWORDS_SET is not None,
                 "id": id(_KEYWORDS_SET),
@@ -2810,22 +2802,29 @@ def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sen
     if (final.get("query_type") or "NON_ERP") == "NON_ERP":
         return _handle_non_erp(final, user_question, chat_id)
 
-    sql = clean_sql(final.get("sql")) or final.get("sql")
+    sql = clean_sql(final.get("sql")) or ""
     orm = clean_sql(final.get("orm") or "")
     formatted_q = _safe_strip(final.get("formatted_q") or "")
     selected_tables = final.get("selected_tables") or []
     fields = _safe_strip(final.get("selected_fields") or "")
     sql_prompt = _safe_strip(final.get("sql_prompt") or "")
-    context = final.get("context")
+    try:
+        context = final.get("context")
+    except Exception as e:
+        frappe.log_error(e, "Error occurred while fetching final values")
     err = final.get("error")
 
     # guard empty sql
-    if not sql:
-        return _error_response(memory_status, user_question, formatted_q, context,
-                               selected_tables, fields, sql, 
-                               {"ok": False, "error": "SQL is empty"},
-                               entity_debug, 0, "SQL not valid or missing", err)
-
+    # if not sql:
+    #     return _error_response(memory_status, user_question, formatted_q, context,
+    #                            selected_tables, fields, sql, 
+    #                            {"ok": False, "error": "SQL is empty"},
+    #                            entity_debug, 0, "SQL not valid or missing", err)
+    # retried_sql1, retried_orm1, retry1_val_res = retry_sql(retried_sql, retry_val_res.get("error"), formatted_q, sql_prompt)
+    # if retry1_val_res.get("ok"):
+    #     return _handle_sql_result(memory_status, sql_prompt, final, retried_sql1, retried_orm1,
+    #                               formatted_q, fields, selected_tables, retry1_val_res,
+    #                               entity_debug, user_question, chat_id)
     res = validate_sql_schema(sql)
     publish_pipeline_update(request_id, "sql_validated", _("SQL validation Completed"))
 
@@ -2835,22 +2834,22 @@ def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sen
                                   formatted_q, fields, selected_tables, res,
                                   entity_debug, user_question, chat_id)
 
-    # retry 1
-    retried_sql, retried_orm, retry_val_res = retry_sql(sql, res.get("error"), formatted_q, sql_prompt)
-    if retry_val_res.get("ok"):
-        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql, retried_orm,
-                                  formatted_q, fields, selected_tables, retry_val_res,
-                                  entity_debug, user_question, chat_id)
-
     # retry 2
-    retried_sql2, retried_orm2, retry2_val_res = retry_sql(retried_sql, retry_val_res.get("error"), formatted_q, sql_prompt)
+    retried_sql2, retried_orm2, retry2_val_res = retry_sql(sql, res.get("error"), formatted_q, sql_prompt)
     if retry2_val_res.get("ok"):
         return _handle_sql_result(memory_status, sql_prompt, final, retried_sql2, retried_orm2,
                                   formatted_q, fields, selected_tables, retry2_val_res,
                                   entity_debug, user_question, chat_id)
 
+    # retry 3
+    retried_sql3, retried_orm3, retry3_val_res = retry_sql(retried_sql2, retry2_val_res.get("error"), formatted_q, sql_prompt)
+    if retry3_val_res.get("ok"):
+        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql3, retried_orm3,
+                                  formatted_q, fields, selected_tables, retry3_val_res,
+                                  entity_debug, user_question, chat_id)
+
     # all retries failed
-    final_error = retry2_val_res.get("error") or retry_val_res.get("error") or res.get("error") or "SQL not valid or missing"
+    final_error = retry2_val_res.get("error") or retry1_val_res.get("error") or retry3_val_res.get("error") or res.get("error") or "SQL not valid or missing"
     return _error_response(memory_status, user_question, formatted_q, context,
                            selected_tables, fields, retried_sql2 or sql,
                            retry2_val_res, entity_debug, 2, final_error, err)
@@ -2913,7 +2912,7 @@ def load_on_startup():
     message=f"PID={os.getpid()} | module={__name__} | file={__file__} | loaded={_EMBEDDER_INSTANCE is not None} | id={id(_EMBEDDER_INSTANCE)}"
 
     try:
-        get_symspell()
+        # get_symspell()
         get_embedding_engine()
         get_table_vs()
         load_field_matrix()
