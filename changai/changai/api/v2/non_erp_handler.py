@@ -574,16 +574,10 @@ def handle_non_erp_query(user_input: str) -> dict:
     t0 = time.time()
     responder = _get_responder()
     get_responder_seconds = time.time() - t0
-    print(f"[non_erp] _get_responder: {get_responder_seconds:.6f}s")
-
     t1 = time.time()
     static_result = responder.get_response(user_input)
     matcher_seconds = time.time() - t1
-    print(f"[non_erp] matcher only: {matcher_seconds:.6f}s")
-
     total_seconds = time.time() - t0
-    print(f"[non_erp] total: {total_seconds:.6f}s")
-
     if static_result["matched"]:
         return {
             "kind": "NON_ERP_STATIC",

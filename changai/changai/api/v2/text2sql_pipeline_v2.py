@@ -8,6 +8,7 @@ import json
 from changai.changai.api.v2.non_erp_handler import handle_non_erp_query
 import yaml
 import re
+from frappe.utils.jinja import render_template
 import os
 import pickle
 import numpy as np
@@ -179,6 +180,56 @@ def get_symspell():
 
     return sym_spell
 
+@lru_cache(maxsize=512)
+def is_child_table(table: str) -> bool:
+    doctype = table.replace("tab", "", 1) if table.startswith("tab") else table
+
+    try:
+        meta = frappe.get_meta(doctype, cached=True)
+        return bool(getattr(meta, "istable", 0))
+    except Exception:
+        return False
+
+CHILD_GENERIC_FIELDS = ["parent", "parenttype", "parentfield", "idx"]
+MAIN_GENERIC_FIELDS = ["name", "docstatus"]
+def enrich_fields_for_sql_context(table: str, fields: list[str]) -> list[str]:
+    out = list(fields)
+
+    if is_child_table(table):
+        for f in reversed(CHILD_GENERIC_FIELDS):
+            if f not in out:
+                out.insert(0, f)
+    else:
+        for f in reversed(MAIN_GENERIC_FIELDS):
+            if f not in out:
+                out.insert(0, f)
+
+    return out
+@frappe.whitelist(allow_guest=False)
+def format_schema_context(grouped: dict[str, list[str]]) -> str:
+    parts = []
+
+    for table, raw_fields in grouped.items():
+        child = is_child_table(table)
+        fields = enrich_fields_for_sql_context(table, raw_fields)
+
+        parts.append(f"TABLE: {table}")
+        parts.append(f"TYPE: {'Child Table' if child else 'Main Table'}")
+
+        if child:
+            parts.append("JOIN RULES:")
+            parts.append("- parent = parent document name")
+            parts.append("- parenttype = parent DocType")
+            parts.append("- parentfield = child table fieldname")
+
+        parts.append("FIELDS:")
+        for field in fields:
+            parts.append(f"- {field}")
+
+        parts.append("")
+
+    return "\n".join(parts)
+
 
 def publish_pipeline_update(request_id, stage, message, data=None, done=False, error=False):
     if not request_id:
@@ -237,7 +288,7 @@ def read_asset(file_name: str, base: str = "assets") -> Any:
     if root is None:
         frappe.throw(_("Invalid base: {0}\n"
                        "Check Quick Start Guide Here 👇:\n {1}").format(base, CHANGAI_GUIDE_LINK))
-
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
     path = _safe_join(root, file_name)
 
     if not path.is_file():
@@ -354,6 +405,7 @@ def load_field_matrix():
 
     app_root = Path(frappe.get_app_path("changai")).resolve()
     schema_rel = "changai/api/v2/fvs_stores/erpnext/emb_dir"
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
     schema_path = _safe_join(app_root, schema_rel)
 
     embs_path = schema_path / "field_embs.npy"
@@ -368,7 +420,7 @@ def load_field_matrix():
         docs = pickle.load(f)
 
     # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(table_idx_path, "rb") as f:  # nosemgrep: path validated by _safe_join against app_root
+    with open(table_idx_path, "rb") as f:
         table_to_idx = pickle.load(f)
 
     embs = np.load(embs_path, mmap_mode="r")
@@ -379,7 +431,6 @@ def load_field_matrix():
 
     return docs, embs, table_to_idx
 
-@frappe.whitelist(allow_guest=True)
 def _get_cached_embedding_test(q: str) -> tuple:
     t0=time.time()
     # publish_pipeline_update(
@@ -1005,18 +1056,12 @@ def _word_is_erp(word: str) -> bool:
             return True
     if len(word) >= 4:
         match = process.extractOne(
-            word, _KEYWORDS_LIST, scorer=fuzz.ratio, score_cutoff=85
+            word, _KEYWORDS_LIST, scorer=fuzz.ratio, score_cutoff=70
         )
         if match:
             return True
     return False
 
-# def is_erp_query(q: str) -> bool:
-#     _init_keywords()
-#     for word in q.lower().split():
-#         if _word_is_erp(word):
-#             return True
-#     return False
 
 STOP_WORDS = {
     # English greetings / casual
@@ -1069,8 +1114,7 @@ def tokenize_mixed(text):
     return re.findall(r'[\u0600-\u06FF]+|[a-zA-Z0-9]+', text.lower())
 
 
-@frappe.whitelist(allow_guest=True)
-def is_erp_query(q: str):
+def is_erp_query(q: str, words_list: list,cut_off_perc:int) -> bool:
     words = tokenize_mixed(q)
 
     for word in words:
@@ -1083,9 +1127,9 @@ def is_erp_query(q: str):
 
         match = process.extractOne(
             word,
-            BUSINESS_KEYWORDS,
+            words_list,
             scorer=fuzz.ratio,
-            score_cutoff=80
+            score_cutoff=cut_off_perc
         )
 
         if match:
@@ -1094,14 +1138,52 @@ def is_erp_query(q: str):
     return False
 
 
+# @frappe.whitelist(allow_guest=False)
+# def test_is_erp_query(q: str,cut_off_perc:int=80) -> bool:
+#     words = tokenize_mixed(q)
+
+#     for word in words:
+
+#         if len(word) <= 2:
+#             continue
+
+#         if word in STOP_WORDS:
+#             continue
+
+#         match = process.extractOne(
+#             word,
+#             BUSINESS_KEYWORDS,
+#             scorer=fuzz.ratio,
+#             score_cutoff=cut_off_perc
+#         )
+
+#         if match:
+#             matched_word = match[0]   # the matched keyword
+#             match_score = match[1]    # the score
+#             return True, matched_word, match_score
+
+#     return False
+
+
 def guardrail_router(state: SQLState) -> SQLState:
     request_id = state.get("request_id")
-    raw_q = state.get("formatted_q") or state.get("question") or ""
+    chat_id = state.get("session_id")
+    raw_q = state.get("question") or ""
     # q = str(raw_q).lower().strip()
     # q_corrected = correct_spelling(q)
-    is_erp= is_erp_query(raw_q)
-    query_type = "ERP" if is_erp else "NON_ERP"
-
+    try:
+        is_erp= is_erp_query(raw_q,BUSINESS_KEYWORDS,80)
+        if is_erp:
+            query_type = "ERP"
+        # elif is_thread_erp(raw_q, chat_id):
+        #     query_type = "ERP"
+        else:
+            query_type = "NON_ERP"
+    except Exception as e:
+        query_type = "NON_ERP"
+        frappe.log_error(frappe.get_traceback(), "Guardrail Router Error")
+        return {**state, "query_type": query_type, "error": f"Error in guardrail router: {str(e)}"}
+    
     state["query_type"] = query_type
     publish_pipeline_update(
             request_id,
@@ -1110,6 +1192,43 @@ def guardrail_router(state: SQLState) -> SQLState:
             data={"query_type": query_type}
         )
     return state
+
+
+@frappe.whitelist(allow_guest=False)
+def test_guardrail_router(question: str, chat_id: str = None, request_id: str = None) -> Dict:
+    """Test API for guardrail_router — mirrors its logic without pipeline state"""
+    
+    if not chat_id:
+        chat_id = frappe.generate_hash(length=10)
+    
+    if not request_id:
+        request_id = frappe.generate_hash(length=10)
+
+    raw_q = str(question).strip()
+
+    try:
+        is_erp = is_erp_query(raw_q, BUSINESS_KEYWORDS, 80)
+        if is_erp:
+            query_type = "ERP"
+        # elif is_thread_erp(raw_q, chat_id):
+        #     query_type = "ERP"
+        else:
+            query_type = "NON_ERP"
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Test Guardrail Router Error")
+        return {
+            "question": raw_q,
+            "query_type": "NON_ERP",
+            "error": str(e)
+        }
+
+    return {
+        "question": raw_q,
+        "chat_id": chat_id,
+        "query_type": query_type,
+        "is_erp": is_erp,
+    }
+
 
 def send_non_erp_request(state: SQLState) -> SQLState:
     qstn =state.get("question")
@@ -1372,7 +1491,6 @@ def build_hnsw_index(embeddings):
     
     return index
 
-
 def call_retrieve_multi_line(user_question: str, request_id: str) -> Dict[str, Any]:
     try:
         top_tables = call_fvs_table_search(user_question, request_id)
@@ -1402,7 +1520,6 @@ def call_retrieve_multi_line(user_question: str, request_id: str) -> Dict[str, A
         raise
     except Exception as e:
         return {"selected_fields": {}, "selected_tables": [], "top_tables": [], "error": str(e)}
-
 
 def call_fvs_field_search_global_k(
     user_question: str,
@@ -1447,7 +1564,7 @@ def call_fvs_field_search_global_k(
 
         meta = getattr(d, "metadata", {}) or {}
         table = meta.get("table")
-        field = meta.get("field")
+        field = meta.get("field") or meta.get("name") 
 
         if not table or not field:
             continue
@@ -1471,13 +1588,10 @@ def call_fvs_field_search_global_k(
             if isinstance(opts, list):
                 name += " {" + ", ".join(str(o) for o in opts[:5]) + "}"
         grouped.setdefault(table, []).append(name)
-
+    
+    res = format_schema_context(grouped)
     # 🔥 final compact string
-    parts = []
-    for table, fields in grouped.items():
-        parts.append(f"{table}: " + ", ".join(fields))
-
-    return "\n".join(parts)
+    return res
 
 
 # Node 1: Retrive with Fiass Vector Store.
@@ -2000,10 +2114,15 @@ def execute_query(sql: str, doctypes: List[str]) -> Any:
         if not str(sql).lower().strip().startswith("select"):
             frappe.throw(_("Only SELECT queries are allowed."
                            "Check Quick Start Guide Here 👇:\n {0}").format(CHANGAI_GUIDE_LINK))
+        sql = sql.rstrip().rstrip(';')
         combined = _build_match_conditions(doctypes)
         if combined:
             sql = _append_conditions(sql, combined)
         return frappe.db.sql(sql, as_dict=True)
+    except PermissionError:
+        return {
+            "error": _("You do not have permission to access this data.\n").format(CHANGAI_GUIDE_LINK)
+        }
     except Exception as e:
         return {"error": f"SQL Execution Failed: {e}\n Check Quick Start Guide Here 👇:\n {CHANGAI_GUIDE_LINK}"}
 
@@ -2078,14 +2197,10 @@ def save_logs(
 
 @frappe.whitelist(allow_guest=False)
 def format_data_conversationally(user_data: Any) -> str:
-    env = jinja2.Environment(
-        autoescape=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
-        extensions=["jinja2.ext.do"],
+    return render_template(
+        CONVERSATION_TEMPLATE,
+        {"data": user_data}
     )
-    template = env.from_string(CONVERSATION_TEMPLATE)
-    return template.render(data=user_data)
 
 
 @frappe.whitelist(allow_guest=False)
@@ -2113,18 +2228,19 @@ TONE & STYLE:
 FORMATTING:
 - Start with ONE relevant emoji matching the topic (📦💰🧾👥📊📅🔍💤📉)
 - For 3+ items, use a bullet list: • Item — value
-- If list exceeds shown items, state exactly how many remain: e.g. + 3 أخرى
+- If list exceeds shown items, state exactly how many remain.
 - Keep answers brief (1–6 lines). Lead with the direct answer, then light context.
 
 CLOSING:
 - End with ONE short, relevant follow-up question to keep the conversation going.
-- Make it feel natural, not robotic. e.g. "هل تريد تفاصيل أكثر عن أحد هؤلاء؟"
+- Make it feel natural, not robotic.
 Never list names or items in a comma-separated line. Ever.
 OUTPUT:
 - Markdown ALLOWED: **bold**, • bullets, emojis
 - No JSON. No code blocks. No labels. No explanations.
 - Output ONLY the final user-facing answer. Nothing else.
-- if the user question is in english reply in arbic only very improtant.
+- if the user question is in english reply in english only very important.
+if the user question is in arabic respond in arabic only. and if the question is in english respond answer also english
 """
     user_prompt=f"""
             QUESTION:
@@ -2466,7 +2582,7 @@ def debug_entity_retriever(q: str):
     }
 
 
-def _invoke_pipeline(user_question: str, chat_id: str, request_id: str,sendNonErptoAI:bool):
+def _invoke_pipeline(user_question: str, chat_id: str, request_id: str,sendNonErptoAI: bool = False):
     initial_state: SQLState = {
         "question": user_question or "",
         "session_id": chat_id,
@@ -2506,8 +2622,8 @@ def _handle_non_erp(final: SQLState, user_question: str, chat_id: str) -> Dict:
 
     if not err and non_erp_res:
         try:
-            save_turn_2(session_id=chat_id, user_text=formatted_q, bot_text=non_erp_res)
-            save_logs(user_question=user_question, formatted_q=formatted_q, result=non_erp_res)
+            save_turn_2(session_id=chat_id, user_text=user_question, bot_text=non_erp_res,type_="non_erp")
+            save_logs(user_question=user_question, formatted_q="Not formatted as its NONERP", result=non_erp_res)
         except Exception as e:
             frappe.log_error(f"Failed to save NON_ERP logs: {e}", "ChangAI Logs")
 
@@ -2539,11 +2655,12 @@ def _get_sql_error_message(err: Any, val: Dict) -> str:
     return f"⚠️ The model generated an invalid query. {error_text}"
 
 
-def _handle_sql_result(memory_status: Dict,sql_prompt:str,final: SQLState, sql: str, orm: str, formatted_q: str, fields: str,
+def _handle_sql_result(memory_status: Dict, sql_prompt: str, final: SQLState, sql: str, orm: str, formatted_q: str, fields: str,
                        selected_tables: List, val: Dict, entity_debug: Dict,
                        user_question: str, chat_id: str) -> Dict:
     try:
         request_id = final.get("request_id")
+        org_sql = final.get("sql")
         extracted_tables = extract_tables_from_sql(sql)
         sql_result = execute_query(sql, extracted_tables)
         publish_pipeline_update(
@@ -2566,18 +2683,19 @@ def _handle_sql_result(memory_status: Dict,sql_prompt:str,final: SQLState, sql: 
 )
     if not err:
         try:
-            save_turn_2(session_id=chat_id, user_text=formatted_q, bot_text=formatted_result)
+            save_turn_2(session_id=chat_id, user_text=formatted_q, bot_text=formatted_result, type_="erp")
             save_logs(user_question=user_question, formatted_q=formatted_q, context=context,
                       sql=sql, val=val, result=sql_result, formatted_result=formatted_result)
         except Exception as e:
             return {"error": str(e)}
 
     return {
+        "Model returned SQL":org_sql,
         "context":context,
-        "Memory Status":memory_status,
+        # "Memory Status":memory_status,
         "Question": user_question,
         "Formated Question":formatted_q,
-        "SQL": sql,
+        "Cleaned SQL": sql,
         "ORM": orm,
         "Tables": selected_tables,
         "Fields": fields,
@@ -2585,59 +2703,177 @@ def _handle_sql_result(memory_status: Dict,sql_prompt:str,final: SQLState, sql: 
         "Validation": val,
         "Error": err,
         "result":sql_result,
-        "EntityDebug": entity_debug,
+        "EntityDebug": entity_debug if entity_debug.get("contains_values") else None,
         "Bot": formatted_result,
     }
+def retry_sql(sql, error, formatted_q, sql_prompt):
+    retry_prompt = SQL_SYS_PROMPT + """
+
+═══ RETRY MODE — STRICT FIX REQUIRED ═══
+STEP 1: Read the failed SQL and error message.
+STEP 2: Find the broken field/table.
+STEP 3: Check SCHEMA CONTEXT — does it exist?
+        YES → fix the syntax.
+        NO  → remove it, find correct field from SCHEMA CONTEXT.
+STEP 4: Verify every remaining field exists in SCHEMA CONTEXT.
+STEP 5: Output fixed SQL. NEVER output the same broken SQL again."""
+
+    user_prompt = sql_prompt + f"""
+
+Failed SQL: {sql}
+Error: {error}
+User Question: {formatted_q}
+
+DO NOT repeat the same SQL.
+DO NOT use the field mentioned in the error.
+Find the correct field from SCHEMA CONTEXT and fix it."""
+
+    try:
+        rewritten = call_gemini(user_prompt, sys_prompt=retry_prompt)
+        rewritten_json = json.loads(rewritten)
+        retried_sql = clean_sql(rewritten_json.get("sql") or "")
+        retried_orm = clean_sql(rewritten_json.get("orm") or "")
+    except Exception:
+        return "", "", {"ok": False, "error": "Retry failed to parse response"}
+
+    if not retried_sql:
+        return "", "", {"ok": False, "error": "Retry returned empty SQL"}
+
+    val_res = validate_sql_schema(retried_sql)
+    return retried_sql, retried_orm, val_res
+
+import json
+import frappe
+@frappe.whitelist(allow_guest=True)
+def get_last_thread_message(chat_id: str):
+    data = frappe.get_all(
+        "ChangAI Chat History",
+        filters={"session_id": chat_id},
+        fields=["content"],
+        order_by="creation asc"
+    )
+
+    for row in reversed(data):
+        try:
+            msg = json.loads(row["content"])
+            # human_msg = msg[-2]["human"]
+            msg_type = msg[-2]["type"]
+            return msg_type
+
+        except Exception:
+            pass
+
+    return ""
+
+
+THREAD_WORDS = [
+        "yes", "yep", "yeah", "yup", "yes please",
+        "of course", "sure", "surely", "absolutely",
+        "definitely", "certainly", "indeed", "correct",
+        "right", "exactly", "precisely",
+        "ok", "okay", "fine", "alright", "go ahead",
+        "do it", "show me", "please", "go on",
+        "continue", "proceed", "why not",
+        "aye", "affirmative", "true", "agreed",
+        "hmm", "hm", "umm", "uh", "ah",
+        "interesting", "i see", "got it", "ok got it",
+        "and", "so", "then", "also", "but",
+        "what", "how", "when", "who", "where", "why",
+        "more", "less", "again", "another", "other",
+        "next", "previous", "back", "forward",
+        "noted", "understood", "makes sense",
+        "okay okay", "fine fine", "sure sure"
+]
+
+@frappe.whitelist(allow_guest=False)
+def is_thread_erp(q,chat_id:str):
+    msg_type = get_last_thread_message(chat_id)
+    if msg_type == "erp" and is_erp_query(q, THREAD_WORDS,85):
+        return True
+    else:
+        return False
+
 
 
 @frappe.whitelist(allow_guest=False)
-def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str,sendNonErptoAI=0) -> Dict:
+def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sendNonErptoAI: bool = False) -> Dict:
     memory_status = check_memory_status()
-    final, err_response = _invoke_pipeline(user_question, chat_id, request_id,sendNonErptoAI)
+    final, err_response = _invoke_pipeline(user_question, chat_id, request_id, sendNonErptoAI)
     if err_response:
         return err_response
+
     entity_debug = {
         "contains_values": final.get("contains_values"),
         "entity_cards": final.get("entity_cards") or [],
     }
+
     if (final.get("query_type") or "NON_ERP") == "NON_ERP":
         return _handle_non_erp(final, user_question, chat_id)
-    sql = clean_sql(final.get("sql")) or ""
-    res=validate_sql_schema(sql)
-    publish_pipeline_update(
-        request_id,
-        "sql_validated",
-        _("SQL validation Completed")
-    )
-    orm = clean_sql(final.get("orm")) or ""
+
+    sql = clean_sql(final.get("sql")) or final.get("sql")
+    orm = clean_sql(final.get("orm") or "")
     formatted_q = _safe_strip(final.get("formatted_q") or "")
     selected_tables = final.get("selected_tables") or []
     fields = _safe_strip(final.get("selected_fields") or "")
     sql_prompt = _safe_strip(final.get("sql_prompt") or "")
-    # val = final.get("validation") or {}
+    context = final.get("context")
     err = final.get("error")
 
-    if not res.get("ok") or not sql.upper().startswith("SELECT"):
-        context = (final.get("context") or final.get("selected_fields") or "")[:800]
-        return {
-            "Memory Status":memory_status,
-            "Question": user_question,
-            "Formatted_Question": formatted_q,
-            "Context": context,
-            "Tables": selected_tables,
-            "Fields": fields,
-            "SQL": sql,
-            "Validation": res,
-            "EntityDebug": entity_debug,
-            "Tries": int(final.get("tries") or 0),
-            "Error": err or "SQL not valid or missing",
-            "Result": [],
-            "Bot": _get_sql_error_message(err, res),
-            
-        }
+    # guard empty sql
+    if not sql:
+        return _error_response(memory_status, user_question, formatted_q, context,
+                               selected_tables, fields, sql, 
+                               {"ok": False, "error": "SQL is empty"},
+                               entity_debug, 0, "SQL not valid or missing", err)
 
-    return _handle_sql_result(memory_status, sql_prompt, final, sql, orm, formatted_q, fields, selected_tables, res, entity_debug, user_question, chat_id)
+    res = validate_sql_schema(sql)
+    publish_pipeline_update(request_id, "sql_validated", _("SQL validation Completed"))
 
+    # valid on first try
+    if res.get("ok") and sql.upper().startswith("SELECT"):
+        return _handle_sql_result(memory_status, sql_prompt, final, sql, orm,
+                                  formatted_q, fields, selected_tables, res,
+                                  entity_debug, user_question, chat_id)
+
+    # retry 1
+    retried_sql, retried_orm, retry_val_res = retry_sql(sql, res.get("error"), formatted_q, sql_prompt)
+    if retry_val_res.get("ok"):
+        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql, retried_orm,
+                                  formatted_q, fields, selected_tables, retry_val_res,
+                                  entity_debug, user_question, chat_id)
+
+    # retry 2
+    retried_sql2, retried_orm2, retry2_val_res = retry_sql(retried_sql, retry_val_res.get("error"), formatted_q, sql_prompt)
+    if retry2_val_res.get("ok"):
+        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql2, retried_orm2,
+                                  formatted_q, fields, selected_tables, retry2_val_res,
+                                  entity_debug, user_question, chat_id)
+
+    # all retries failed
+    final_error = retry2_val_res.get("error") or retry_val_res.get("error") or res.get("error") or "SQL not valid or missing"
+    return _error_response(memory_status, user_question, formatted_q, context,
+                           selected_tables, fields, retried_sql2 or sql,
+                           retry2_val_res, entity_debug, 2, final_error, err)
+
+
+def _error_response(memory_status, user_question, formatted_q, context,
+                    selected_tables, fields, sql, validation,
+                    entity_debug, tries, error, err):
+    return {
+        "Memory Status": memory_status,
+        "Question": user_question,
+        "Formatted_Question": formatted_q,
+        "Context": (context or "")[:800],
+        "Tables": selected_tables,
+        "Fields": fields,
+        "SQL": sql,
+        "Validation": validation,
+        "EntityDebug": entity_debug,
+        "Tries": tries,
+        "Error": error,
+        "Result": [],
+        "Bot": _get_sql_error_message(error, validation),
+    }
 
 
 # @frappe.whitelist(allow_guest=False)
@@ -2651,7 +2887,6 @@ def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str,send
 #     except Exception as e:
 #         print(f"Error during model call: {e}")
 _WARMUP_COUNT=0
-@frappe.whitelist(allow_guest=True)
 def load_on_startup():
     global _WARMUP_COUNT,_EMBEDDER_INSTANCE, _VS_TABLE, _FULL_FIELDS_VS, _VS_MASTER, _FIELD_DOCS_CACHE, sym_spell, _GEMINI_CLIENT
     _WARMUP_COUNT+=1
@@ -2721,7 +2956,6 @@ def test():
     return result
 
 
-@frappe.whitelist(allow_guest=True)
 def get_embedding_engine_test():
     global _EMBEDDER_INSTANCE
     import time, os
@@ -2754,18 +2988,4 @@ def get_embedding_engine_test():
         "pid": os.getpid(),
         "load_time": time.time() - t3,
         "result": "loaded_now"
-    }
-
-
-@frappe.whitelist(allow_guest=True)
-def test_guardrail_router(question: str):
-    raw_q = (question or "").lower().strip()
-    q_corrected = correct_spelling(raw_q)
-    is_erp = is_erp_query(q_corrected)
-    query_type = "ERP" if is_erp else "NON_ERP"
-
-    return {
-        "original": question,
-        "corrected": q_corrected,
-        "query_type": query_type,
     }

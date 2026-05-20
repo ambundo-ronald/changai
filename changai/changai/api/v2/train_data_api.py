@@ -168,8 +168,8 @@ def _sync_frappe_file_doc(module_name: str, abs_path: str, folder_path: str, suf
             "folder": folder_path,
             "file_type": "JSONL"
         }).insert(ignore_permissions=True)
-
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit - explicit commit required to persist File DocType record immediately after disk write during training data sync
+    # nosemgrep: frappe-manual-commit - explicit commit required to persist File DocType record immediately after disk write during training data sync
+    frappe.db.commit()
     return file_doc
 
 

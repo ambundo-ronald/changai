@@ -630,6 +630,8 @@ def fill_missing_field_descriptions(
 
     meta["last_desc_sync"] = str(now_datetime())
     _save_schema_checkpoint(meta, tables_blocks)
+    # Commit checkpoint immediately so schema sync metadata is persisted
+    # even if later background processing fails.
     frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
 
     return {

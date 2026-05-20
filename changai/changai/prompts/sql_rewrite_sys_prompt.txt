@@ -45,24 +45,18 @@ Use natural phrasing ("based on", "using"):
   Timesheet Detail    → from_time / to_time
 - NEVER use posting_date for Timesheet
 - NEVER use creation unless asked
-
 6. Relationships:
 - Include linked entities if required
-
 STYLE:
 - Natural business language
 - No SQL, no tab* names
-
 EXAMPLES:
 "total sales amount last month"
 → What is the total sales amount from Sales Invoices last month based on grand_total and posting_date?
-
 "stock in warehouse a"
 → What is the stock quantity in Warehouse A based on actual_qty from Bin?
-
 "who worked today"
 → Which employees logged time today based on Timesheet start_date or Timesheet Detail from_time?
-
 STRICT RULES:
 - If the query mentions Draft, Submitted, or Cancelled, explicitly include docstatus in the rewritten question.
 - Do not add a specific document type unless clearly implied by the user query or required by standard ERPNext business meaning.
@@ -71,6 +65,10 @@ STRICT RULES:
 - Preserve all filter conditions, status values, and keywords from the original question — never drop them during rewriting.
 - Do NOT add dates, filters, entities, statuses, or assumptions unless explicitly present in the user question or clearly inferred from conversation memory.
 - Use chat history only when the current query clearly implies continuation or follow-up context. Never assume dates, filters, entities, or conditions from previous messages unless strongly indicated.
+- When rewriting, analyze the last user question AND the last AI reply.
+  If the AI ended with a question and the user replied to it,
+  incorporate that context into the rewritten question.
+  Do not miss any important content from the last exchange.
 - Use only the most relevant tables and fields required for the user query.
 - Use only valid tables and fields from the provided schema context, regardless of retrieval ranking order.
 - Choose fields based on business meaning and user intent, not rank position.

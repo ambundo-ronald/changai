@@ -3,7 +3,7 @@
     <div class="motion-safe:animate-fade-rise flex w-full items-start gap-1.5">
       <BotIcon />
       <p class="w-fit max-w-[calc(100%-2.5rem)] whitespace-pre-line rounded-[10px_10px_10px_3px] bg-brand-50 px-4 py-3 text-xs leading-relaxed wrap-anywhere text-slate-900 max-[600px]:max-w-[calc(100%-2.25rem)]">
-        Hello there &#x1F44B; I am ChangAI from ERPGulf.com , your ERP assistant.<br>
+        Hello there &#x1F44B; I am ChangAI from <a target="_blank" href="https://erpgulf.com" rel="noopener noreferrer" style="color: #1e90ff;">ERPGulf.com</a>, your ERP assistant.<br>
         <a target="_blank" href="https://app.erpgulf.com/en/articles/chang-ai-quick-start-guide" rel="noopener noreferrer" style="color: #1e90ff;">ChangAI Quick Start Guide - Click here.</a>
       </p>
     </div>

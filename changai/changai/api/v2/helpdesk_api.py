@@ -16,6 +16,7 @@ def create_helpdesk_ticket(subject:str,user:str,email:str,priority:str ="Low", t
         doc.status = "Open"
 
         doc.insert(ignore_permissions=True)
+        # nosemgrep: frappe-manual-commit - explicit commit required to persist File DocType record.
         frappe.db.commit()
 
 
