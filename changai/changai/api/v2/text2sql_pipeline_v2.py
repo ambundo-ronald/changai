@@ -1119,10 +1119,10 @@ def is_erp_query(q: str, words_list: list,cut_off_perc:int) -> bool:
 
     for word in words:
 
-        if len(word) <= 2:
-            continue
         if words_list != THREAD_WORDS:
             if word in STOP_WORDS:
+                continue
+            if len(word) <= 2:
                 continue
 
         match = process.extractOne(
@@ -1138,31 +1138,31 @@ def is_erp_query(q: str, words_list: list,cut_off_perc:int) -> bool:
     return False
 
 
-# @frappe.whitelist(allow_guest=False)
-# def test_is_erp_query(q: str,cut_off_perc:int=80) -> bool:
-#     words = tokenize_mixed(q)
+@frappe.whitelist(allow_guest=False)
+def test_is_erp_query(q: str,cut_off_perc:int=85) -> bool:
+    words = tokenize_mixed(q)
 
-#     for word in words:
+    for word in words:
 
-#         if len(word) <= 2:
-#             continue
+        # if len(word) <= 2:
+        #     continue
 
-#         if word in STOP_WORDS:
-#             continue
+        # if word in STOP_WORDS:
+        #     continue
 
-#         match = process.extractOne(
-#             word,
-#             BUSINESS_KEYWORDS,
-#             scorer=fuzz.ratio,
-#             score_cutoff=cut_off_perc
-#         )
+        match = process.extractOne(
+            word,
+            THREAD_WORDS,
+            scorer=fuzz.ratio,
+            score_cutoff=cut_off_perc
+        )
 
-#         if match:
-#             matched_word = match[0]   # the matched keyword
-#             match_score = match[1]    # the score
-#             return True, matched_word, match_score
+        if match:
+            matched_word = match[0]   # the matched keyword
+            match_score = match[1]    # the score
+            return True, matched_word, match_score
 
-#     return False
+    return False
 
 
 def guardrail_router(state: SQLState) -> SQLState:
@@ -2788,6 +2788,7 @@ THREAD_WORDS = [
 @frappe.whitelist(allow_guest=False)
 def is_thread_erp(q,chat_id:str):
     msg_type = get_last_thread_message(chat_id)
+    return msg_type
     if msg_type == "erp" and is_erp_query(q, THREAD_WORDS,85):
         return True
     else:

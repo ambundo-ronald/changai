@@ -1,10 +1,10 @@
 [project]
-name = "changAI"
+name = "changai"
 authors = [
     { name = "ERpGulf", email = "support@erpgulf.com"}
 ]
 description = "ChangAI"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
