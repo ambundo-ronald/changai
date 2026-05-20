@@ -56,7 +56,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 ## Tech Stack
 
 **Backend**
-
+** Please note new URL on github https://github.com/ERPGulf/changai**
 - [Frappe Framework](https://frappeframework.com) — Full-stack Python web framework that powers ERPNext. Handles authentication, permissions, database queries, and API routing.
 - Python 3.10+ — Core language for all backend logic, model serving, and pipeline orchestration.
 
