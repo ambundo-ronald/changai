@@ -16,7 +16,7 @@ def save_message_doc(session_id:str,message_type:str,content:str):
 
 
 @frappe.whitelist(allow_guest=False)
-def save_turn_2(session_id: str, user_text: str=None, bot_text: Any = None):
+def save_turn_2(session_id: str, user_text: str=None, bot_text: Any = None,type_:str=None):
     # find existing document
     doc_name = frappe.db.exists(CHANGAI_CHAT_HIST_DOC, {"session_id": session_id})
 
@@ -30,7 +30,7 @@ def save_turn_2(session_id: str, user_text: str=None, bot_text: Any = None):
                 history = []
 
     if user_text:
-        history.append({"human": user_text})
+        history.append({"human": user_text,"type":type_})
     if bot_text:
         history.append({"ai": bot_text})
     new_content = json.dumps(history, ensure_ascii=False, indent=2)

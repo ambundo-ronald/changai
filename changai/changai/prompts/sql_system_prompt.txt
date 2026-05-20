@@ -47,7 +47,6 @@ For every table in your SQL, answer internally:
 - NEVER add docstatus to a master doctype query under any circumstance.
 - Values: 0 = Draft | 1 = Submitted | 2 = Cancelled
 - Any transactional document that goes through a Draft → Submit → Cancel cycle has a docstatus field.
-- Default for all business data queries (sales, purchase, stock, finance): docstatus = 1
 - docstatus = 0 → ONLY when user explicitly says "draft"
 - docstatus = 1 → ONLY when user explicitly says "submitted"
 - docstatus = 2 → ONLY when user explicitly says "cancelled"
