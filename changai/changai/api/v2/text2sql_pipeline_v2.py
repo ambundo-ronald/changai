@@ -1175,8 +1175,8 @@ def guardrail_router(state: SQLState) -> SQLState:
         is_erp= is_erp_query(raw_q,BUSINESS_KEYWORDS,80)
         if is_erp:
             query_type = "ERP"
-        # elif is_thread_erp(raw_q, chat_id):
-        #     query_type = "ERP"
+        elif is_thread_erp(raw_q, chat_id):
+            query_type = "ERP"
         else:
             query_type = "NON_ERP"
     except Exception as e:
@@ -2788,7 +2788,6 @@ THREAD_WORDS = [
 @frappe.whitelist(allow_guest=False)
 def is_thread_erp(q,chat_id:str):
     msg_type = get_last_thread_message(chat_id)
-    return msg_type
     if msg_type == "erp" and is_erp_query(q, THREAD_WORDS,85):
         return True
     else:
