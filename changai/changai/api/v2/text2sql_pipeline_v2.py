@@ -40,6 +40,7 @@ from changai.changai.api.v2.store_chats import (
     save_turn_2,
     inject_prompt,
 )
+from changai.changai.api.v2.non_erp_handler import IntelligentStaticResponder
 from huggingface_hub import snapshot_download
 from frappe.desk.reportview import build_match_conditions
 import shutil
@@ -56,6 +57,7 @@ _FIELD_EMBS_CACHE = None
 _TABLE_TO_IDX_CACHE = None
 _KEYWORDS_SET=None
 _KEYWORDS_LIST=None
+ERPGULF_LINK = "https://app.erpgulf.com/en/products/chang-ai-an-ai-agent"
 _ASSETS_DIR = Path(frappe.get_app_path("changai", "changai", "api", "v2", "assets")).resolve()
 _PROMPTS_DIR = Path(frappe.get_app_path("changai", "changai", "prompts")).resolve()
 CHANGAI_SETTINGS = "ChangAI Settings"
@@ -1718,14 +1720,17 @@ def get_master_vs():
                 frappe.throw(_(
                     "FAISS MASTER store not found at {0}.<br><br>"
                     "Please open "
-                    "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
+                    "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a>"
                     "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
                     "Check Quick Start Guide Here 👇<br>"
-                    "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a>"
+                    "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a><br><br><br>"
+                    "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+
                 ).format(
                     master_vs_path,
                     settingsUrl,
-                    CHANGAI_GUIDE_LINK
+                    CHANGAI_GUIDE_LINK,
+                    ERPGULF_LINK
                 ))
 
             _VS_MASTER = FAISS.load_local(
@@ -1830,8 +1835,10 @@ def detect_specific_entities(state: SQLState) -> SQLState:
                 "<a href='{0}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
                 "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
                 "Check Quick Start Guide Here 👇:<br>"
-                "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>"
-            ).format(settingsUrl, CHANGAI_GUIDE_LINK))
+                "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br><br>"
+                "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+
+            ).format(settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
 
         if not res.get("update_status") and res.get("days", 0) > 0:
             frappe.throw(_(
@@ -1841,8 +1848,10 @@ def detect_specific_entities(state: SQLState) -> SQLState:
                 "<a href='{1}' target='_blank' rel='noopener noreferrer'>ChangAI Settings</a> "
                 "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
                 "Check Quick Start Guide Here 👇:<br>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>"
-            ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK))
+                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br><br>"
+                "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+
+            ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
 
         out = call_entity_retriever(q)
         return {
@@ -2761,22 +2770,36 @@ def get_last_thread_message(chat_id: str):
 
 
 THREAD_WORDS = [
-        "yes", "yep", "yeah", "yup", "yes please",
-        "of course", "sure", "surely", "absolutely",
-        "definitely", "certainly", "indeed", "correct","ofcourse",
-        "right", "exactly", "precisely",
-        "ok", "okay", "fine", "alright", "go ahead",
-        "do it", "show me", "please", "go on",
-        "continue", "proceed", "why not",
-        "aye", "affirmative", "true", "agreed",
-        "hmm", "hm", "umm", "uh", "ah",
-        "interesting", "i see", "got it", "ok got it",
-        "and", "so", "then", "also", "but",
-        "what", "how", "when", "who", "where", "why",
-        "more", "less", "again", "another", "other",
-        "next", "previous", "back", "forward",
-        "noted", "understood", "makes sense",
-        "okay okay", "fine fine", "sure sure"
+    # English confirmation
+    "yes", "yep", "yeah", "yup", "yes please",
+    "of course", "sure", "surely", "absolutely",
+    "definitely", "certainly", "indeed", "correct", "ofcourse",
+    "right", "exactly", "precisely",
+    "ok", "okay", "fine", "alright", "go ahead",
+    "do it", "show me", "please", "go on",
+    "continue", "proceed", "why not",
+    "aye", "affirmative", "true", "agreed",
+    "hmm", "hm", "umm", "uh", "ah",
+    "interesting", "i see", "got it", "ok got it",
+    "and", "so", "then", "also", "but",
+    "what", "how", "when", "who", "where", "why",
+    "more", "less", "again", "another", "other",
+    "next", "previous", "back", "forward",
+    "noted", "understood", "makes sense",
+    "okay okay", "fine fine", "sure sure",
+    # Arabic confirmation
+    "نعم", "أجل", "بالتأكيد", "طبعاً", "حسناً",
+    "موافق", "صحيح", "بالضبط", "تماماً", "إي",
+    "ماشي", "تمام", "أوكي", "يلا", "استمر",
+    "كمّل", "واضح", "فاهم", "مفهوم", "اوك",
+    # Arabic neutral / continuation
+    "و", "ثم", "لكن", "أيضاً", "كذلك",
+    "ماذا", "كيف", "متى", "من", "أين", "لماذا",
+    "أكثر", "أقل", "مرة أخرى", "التالي", "السابق",
+    "حسناً حسناً", "تمام تمام", "مزيد", "غيره",
+    # Arabic rejection
+    "لا", "لأ", "لا شكراً", "إلغاء", "توقف",
+    "اتركه", "مش محتاج", "مو صح", "خطأ",
 ]
 
 @frappe.whitelist(allow_guest=False)

@@ -212,6 +212,12 @@ if (msg.done) {
   error: errorText,
 })
     console.error('ChangAI API Error:', err)
+    if (error === "ERR_NETWORK_CHANGED"){
+    thinkingMsg.isStatus = false
+    thinkingMsg.statusType = null
+    thinkingMsg.text = '⚠️ Network error. Please check your connection and try again.'
+
+    }
     thinkingMsg.isStatus = false
     thinkingMsg.statusType = null
     thinkingMsg.text = '⚠️ Something went wrong. Please try again.'
