@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
+    "cffi>=1.17.1",                          # Must be first — pre-built Py3.13 wheels, fixes zstandard build
     "openai>=1.64.0,<2.0.0",
     "anthropic>=0.79.0,<1.0.0",
     "google-genai>=1.60.0,<2.0.0",
@@ -22,14 +23,12 @@ dependencies = [
     "sentence-transformers>=5.0.0",
     "huggingface_hub>=0.23.0,<1.0.0",
     "faiss-cpu>=1.7.4,<2.0.0",
-    "numpy>=1.22.0,<2.0.0",         # DO NOT REMOVE <2.0.0 (Breaks ERPNext)
+    "numpy>=1.22.0,<2.0.0",                  # DO NOT REMOVE <2.0.0 (Breaks ERPNext)
     "sqlglot>=27.0.0",
-    "boto3>=1.34.0",
+    "boto3>=1.34.0,<1.35.0",                 # Pinned to avoid botocore pulling zstandard
     "PyQRCode>=1.2.1",
     "pypng>=0.20220715.0",
     "opencv-python-headless>=4.8.0,<5.0.0"
-    # Removed: zstandard (transitive dep, source build fails on servers missing libffi-dev)
-    # Removed: requests, Jinja2, PyYAML, typing_extensions (already provided by Frappe)
 ]
 
 [build-system]
