@@ -1121,9 +1121,9 @@ def is_erp_query(q: str, words_list: list,cut_off_perc:int) -> bool:
 
         if len(word) <= 2:
             continue
-
-        if word in STOP_WORDS:
-            continue
+        if words_list != THREAD_WORDS:
+            if word in STOP_WORDS:
+                continue
 
         match = process.extractOne(
             word,
@@ -2769,7 +2769,7 @@ def get_last_thread_message(chat_id: str):
 THREAD_WORDS = [
         "yes", "yep", "yeah", "yup", "yes please",
         "of course", "sure", "surely", "absolutely",
-        "definitely", "certainly", "indeed", "correct",
+        "definitely", "certainly", "indeed", "correct","ofcourse",
         "right", "exactly", "precisely",
         "ok", "okay", "fine", "alright", "go ahead",
         "do it", "show me", "please", "go on",
