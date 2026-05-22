@@ -39,7 +39,7 @@ from changai.changai.api.v2.store_chats import (
     save_turn_2,
     inject_prompt,
 )
-from changai.changai.api.v2.non_erp_handler import IntelligentStaticResponder
+# from changai.changai.api.v2.non_erp_handler import IntelligentStaticResponder
 from huggingface_hub import snapshot_download
 from frappe.desk.reportview import build_match_conditions
 import shutil
@@ -77,7 +77,7 @@ _ALLOWED_EXT = {".json", ".yaml",".j2", ".yml", ".txt", ".md"}
 
 SQL_REWRITE_PROMPT = """You are an ERP query rewriter and entity detector.
 Return ONLY valid JSON:
-{{"standalone_question":"...","contains_values":true/false}}
+{{"standalone_question":"...","contains_values":true/false,"entity_word":["..."]}}
 
 TASK 1 — FOLLOW-UP
 - If the query depends on previous messages, rewrite it as a complete standalone question.
@@ -87,7 +87,8 @@ TASK 2 — ENTITY DETECTION
 contains_values = TRUE: Any noun that refers to a specific named master record
 (item name, customer name, supplier name, warehouse name, employee name)
 If not sure, also set contains_values = TRUE, otherwise contains_values = FALSE.
-
+if contains_values = TRUE, then entity_word = the most relevant noun/entity name from the question and place it here and return only if contains_values is TRUE.
+if multiple entites are present,place all of them in entity_word list.
 TASK 3 — ERP CONTEXTUAL REWRITE
 
 1. Normalize:
@@ -1027,6 +1028,7 @@ class SQLState(TypedDict, total=False):
     session_id: str
     question: str
     contains_values: bool
+    entity_words:List[str]
     formatted_q: str
     hits: List[Any]
     context: str
@@ -1133,7 +1135,6 @@ def is_erp_query(master_match:bool, q: str, words_list: list,cut_off_perc:int) -
             "matched_value": match,
         }
 
-
     words = tokenize_mixed(q)
 
     for word in words:
@@ -1190,7 +1191,8 @@ def send_non_erp_request(state: SQLState) -> SQLState:
         return {**state, "non_erp_res": "", "error": "No question provided"}
     # prompt = NON_ERP_PROMPT.format(question=qstn)
     try:
-        response = handle_non_erp_query(qstn)
+        # response = handle_non_erp_query(qstn)
+        response = non_erp_response(qstn)
         # response = call_model(prompt, "llm")
         if not response or not response.get("data"):
             return {**state,"non_erp_res": "", "error": str(response)}
@@ -1219,10 +1221,11 @@ def _parse_rewrite_response(raw: Any, user_qstn: str) -> Tuple[str, bool]:
     if isinstance(obj, dict):
         standalone = (obj.get("standalone_question") or "").strip() or standalone
         contains_values = bool(obj.get("contains_values"))
+        entity_words = obj.get("entity_word") or [] if contains_values else []
     elif isinstance(obj, list) and not standalone:
         standalone = json.dumps(obj)
 
-    return standalone or user_qstn.strip(), contains_values
+    return standalone or user_qstn.strip(), contains_values, entity_words
 
 SQL_REWRITE_SYS_PROMPT = read_asset("sql_rewrite_sys_prompt.txt", base="prompts")
 SQL_REWRITE_USER_PROMPT = read_asset("sql_rewrite_user_prompt.txt", base="prompts")
@@ -1235,7 +1238,7 @@ def rewrite_question(state: SQLState) -> SQLState:
 
     try:
         raw = call_model(prompt, "llm",sys_prompt)
-        standalone, contains_values = _parse_rewrite_response(raw, user_qstn)
+        standalone, contains_values,entity_words = _parse_rewrite_response(raw, user_qstn)
 
         publish_pipeline_update(
             request_id,
@@ -1248,6 +1251,7 @@ def rewrite_question(state: SQLState) -> SQLState:
             **state,
             "formatted_q": standalone,
             "contains_values": contains_values,
+            "entity_words": entity_words,
             "formatting_prompt": prompt,
             "error": None,
         }
@@ -1726,7 +1730,7 @@ def append_entity_field_to_schema(top_fields: str, table_name: str, field_name: 
     return re.sub(pattern, replace_block, top_fields, count=1, flags=re.DOTALL)
 
 
-def local_entity_embedder(q: str,state: SQLState = None) -> List[Dict[str, Any]]:
+def local_entity_embedder(q: str) -> List[Dict[str, Any]]:
     hits = get_master_vs().similarity_search(q, k=20)
     out, seen = [], set()
     for h in hits:
@@ -1746,8 +1750,8 @@ def local_entity_embedder(q: str,state: SQLState = None) -> List[Dict[str, Any]]
             out.append({"entity_type": entity_type, "entity_id": entity_id, "entity_label": entity_label})
     return out
 
-
-def call_entity_retriever(qstn: str,state: SQLState) -> Dict[str, Any]:
+@frappe.whitelist(allow_guest=True)
+def call_entity_retriever(qstn: str,state:Dict) -> Dict[str, Any]:
     config = ChangAIConfig.get()
     if config["REMOTE"] and config["llm"] == "QWEN3":
         response = remote_entity_embedder(qstn)
@@ -1764,13 +1768,17 @@ def call_entity_retriever(qstn: str,state: SQLState) -> Dict[str, Any]:
 
         return {"raw": body, "cards": cards}
     else:
-        results = local_entity_embedder(qstn,state)
-        cards = [
-            r.get("entity_label")
-            for r in results
-            if r.get("entity_label")
-        ]
-        return {"raw": results, "cards": cards}
+        from changai.changai.api.v2.schema_utils import phonetic_match
+        entity_words = state.get("entity_words")
+        cards = []
+        for word in entity_words:
+            result = phonetic_match(word)
+            labels = result.get("entity_labels") or []  # ✅ get list from dict
+            
+            for label in labels:
+                if label and label not in cards:
+                    cards.append(label)
+        return {"cards": cards}
 
 
 # # Node 5:Repair Loop :Simple prompt for one more try.
@@ -1834,7 +1842,7 @@ def detect_specific_entities(state: SQLState) -> SQLState:
                 "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
             ).format(settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
 
-        if not res.get("update_status") and res.get("days", 0) > 0:
+        if res.get("is_stale") and res.get("days", 0) > 0:
             frappe.throw(_(
                 "Your master data is {0} days old. "
                 "Because of this, results may not be accurate. "
@@ -1850,7 +1858,7 @@ def detect_specific_entities(state: SQLState) -> SQLState:
         return {
             **state,
             "entity_cards": out.get("cards") or [],
-            "entity_raw": out.get("raw"),
+            # "entity_raw": out.get("raw"),
         }
     except frappe.exceptions.ValidationError:
         raise
@@ -2197,6 +2205,9 @@ def save_logs(
 
 
 def format_data_conversationally(user_data: Any) -> str:
+    # Safe: CONVERSATION_TEMPLATE is a hardcoded internal template string.
+    # User SQL result is passed only as data context, not as template source.
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
     return render_template(
         CONVERSATION_TEMPLATE,  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
 
@@ -2667,6 +2678,7 @@ def _handle_sql_result(memory_status: Dict, sql_prompt: str, final: SQLState, sq
             "sql_executed",
             "Query executed"
         )
+        entity_words=final.get("entity_words")
     except Exception as e:
         return {"ok": False, "error": f"SQL Execution Failed: {e}"}
 
@@ -2691,6 +2703,7 @@ def _handle_sql_result(memory_status: Dict, sql_prompt: str, final: SQLState, sq
     return {
         "Model returned SQL":org_sql,
         "context":context,
+        "entity_words":entity_words,
         # "Memory Status":memory_status,
         "Question": user_question,
         "Formated Question":formatted_q,
@@ -2827,6 +2840,7 @@ def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sen
     fields = _safe_strip(final.get("selected_fields") or "")
     sql_prompt = _safe_strip(final.get("sql_prompt") or "")
     final_prompt = final.get("final_prompt") or ""
+    entity_words=final.get("entity_words") or []
     try:
         context = final.get("context")
     except Exception as e:
@@ -2921,7 +2935,7 @@ def load_on_startup():
     message=f"PID={os.getpid()} | module={__name__} | file={__file__} | loaded={_EMBEDDER_INSTANCE is not None} | id={id(_EMBEDDER_INSTANCE)}"
 
     try:
-        # get_symspell()
+        load_non_erp_data()
         get_embedding_engine()
         get_table_vs()
         load_field_matrix()
@@ -2987,3 +3001,80 @@ def get_embedding_engine_test():
         "load_time": time.time() - t3,
         "result": "loaded_now"
     }
+
+
+
+@frappe.whitelist(allow_guest=True)
+def test_rewrite_question(question: str, session_id: str = "test_session"):
+    """
+    Test endpoint for rewrite_question
+    Call from Postman:
+    POST /api/method/changai.changai.api.v2.text2sql_pipeline_v2.test_rewrite_question
+    Body: { "question": "show sales for Amrin Yousuf", "session_id": "test_session" }
+    """
+    sys_prompt = SQL_REWRITE_SYS_PROMPT
+    prompt = inject_prompt(question, session_id)
+
+    try:
+        raw = call_model(prompt, "llm", sys_prompt)
+        standalone, contains_values, entity_words = _parse_rewrite_response(raw, question)
+
+        return {
+            "ok": True,
+            "raw_response":     raw,               # what LLM returned
+            "standalone":       standalone,         # rewritten question
+            "contains_values":  contains_values,    # True/False
+            "entity_words":     entity_words,       # extracted entity words
+            "prompt":           prompt              # full prompt sent to LLM
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e)
+        }
+    
+
+_NON_ERP_DATA = None
+_NON_ERP_QUESTIONS = None
+_NON_ERP_RESPONSE_MAP = None
+
+@frappe.whitelist(allow_guest=True)
+def load_non_erp_data():
+    global _NON_ERP_DATA, _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP
+
+    if _NON_ERP_DATA is not None:
+        return _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP
+    try:
+        _NON_ERP_DATA = read_asset("non_erp_combined.processed.json")
+    except Exception as e:
+        frappe.log_error(f"Failed to load NON-ERP data: {e}", "ChangAI NON-ERP Data Load Error")
+        _NON_ERP_DATA = []
+
+    _NON_ERP_QUESTIONS = []
+    _NON_ERP_RESPONSE_MAP = {}
+
+    for item in _NON_ERP_DATA:
+        q = item.get("user_input")
+        if not q:
+            continue
+
+        _NON_ERP_QUESTIONS.append(q)
+        _NON_ERP_RESPONSE_MAP[q] = item.get("response")
+
+    return _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP
+
+
+@frappe.whitelist(allow_guest=True)
+def non_erp_response(non_erp_q: str) -> Optional[str]:
+    questions, response_map = load_non_erp_data()
+    result = process.extractOne(
+        non_erp_q,
+        questions,
+        scorer=fuzz.WRatio,
+        score_cutoff=65
+    )
+    if not result:
+        return {"data":"Hey Iam ChangAI from ERPGulf,iam here to help you with your queries..."}
+    matched_q = result[0]
+    return {"data": response_map.get(matched_q, "Hey Iam ChangAI from ERPGulf,iam here to help you with your queries...")}

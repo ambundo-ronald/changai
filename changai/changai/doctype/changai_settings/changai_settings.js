@@ -278,7 +278,7 @@ async function check_updates(file_name) {
             file_name: file_name
         }
     });
-    const update = r.message?.update_status;
+    const update = r.message?.is_stale;
     const data = r.message?.data;
     const days = r.message?.days ?? 0;
     const last_sync = r.message?.last_sync;

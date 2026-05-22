@@ -58,7 +58,8 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 **Backend**
 ** Please note new URL on github https://github.com/ERPGulf/changai**
 - [Frappe Framework](https://frappeframework.com) — Full-stack Python web framework that powers ERPNext. Handles authentication, permissions, database queries, and API routing.
-- Python 3.10+ — Core language for all backend logic, model serving, and pipeline orchestration.
+- Python 3.14 — Core language for all backend logic, model serving, and pipeline orchestration.
+**Note** - Python 3.14 requires sudo apt-get install build-essential python3-dev before bench get-app
 
 **AI and Machine Learning**
 
@@ -199,7 +200,8 @@ Natural Language    Result is returned as a human-readable answer
 No. changAI is built for non-technical users. You type a question in plain English and the system handles schema lookup, query generation, and result formatting automatically.
 
 **Which ERPNext versions are supported?**  
-changAI supports ERPNext v14, v15, and v16 on Ubuntu with Python 3.10 or higher.
+changAI supports ERPNext  v15, and v16 on Ubuntu with Python 3.14 or higher.
+**Note** - Python 3.14 requires sudo apt-get install build-essential python3-dev before bench get-app
 
 **Which modules does changAI cover out of the box?**  
 changAI ships pre-configured with the standard ERPNext schema, so modules like Accounts, Inventory, Purchasing, Sales, and HR work immediately after installation without any additional mapping. Custom doctypes and fields require a schema sync using an Anthropic Claude API key.

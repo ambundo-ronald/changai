@@ -275,8 +275,27 @@ def sync_master_data_smart() -> Dict[str, Any]:
         removed_total += len(removed_ids)
 
         for rec in live_records:
-            entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
-            rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
+            if mod == "Item":
+                item_code = rec.get("name")
+                if item_code:
+                    rebuilt_rows.append(
+                _build_master_data_row(
+                    entity_type,
+                    item_code,
+                    "name"
+                ))
+                item_name = rec.get(title_field)
+                if item_name:
+                    rebuilt_rows.append(
+                _build_master_data_row(
+                    entity_type,
+                    item_name,
+                    title_field
+                )
+            )
+            else:                    
+                entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
+                rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
 
     final_data = rebuilt_rows
 
