@@ -260,7 +260,7 @@ def check_file_updates(file_name :str):
     if not last_sync:
         return {
             "is_stale": False,
-            "data": True,
+            "data": False,
             "days": 0,
             "last_sync": None
         }
@@ -280,13 +280,20 @@ def check_file_updates(file_name :str):
             changed = True
 
     days = days_diff(today(), getdate(last_sync))
-
-    return {
-        "is_stale": bool(changed),
-        "data": True,
-        "days": days,
-        "last_sync": last_sync
-    }
+    if changed == True:
+        return {
+            "is_stale": True,
+            "data": True,
+            "days": days,
+            "last_sync": last_sync
+        }
+    else:
+        return {
+            "is_stale":False,
+            "data": True,
+            "days": days,
+            "last_sync": last_sync
+        }
 
 
 @frappe.whitelist()

@@ -278,7 +278,7 @@ async function check_updates(file_name) {
             file_name: file_name
         }
     });
-    const update = r.message?.is_stale;
+    const is_stale = r.message?.is_stale;
     const data = r.message?.data;
     const days = r.message?.days ?? 0;
     const last_sync = r.message?.last_sync;
@@ -288,7 +288,7 @@ async function check_updates(file_name) {
     let badge_text = "Unknown";
 
 
-    if (update === false) {
+    if (is_stale === true) {
         if (days > 1) {
             badge_class = "badge-yellow";
             badge_text = `${formatted_date}`
@@ -299,7 +299,7 @@ async function check_updates(file_name) {
         }
 
     }
-    if (update === true) {
+    if (is_stale === false) {
         if (data) {
             badge_class = "badge-green";
             badge_text = `${formatted_date}`
