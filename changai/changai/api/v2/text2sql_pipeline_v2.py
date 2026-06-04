@@ -2314,7 +2314,7 @@ Return ONLY valid JSON:
     "<filter_name>": "<filter_value>"
   }}
 }}
-
+**Always use party_type when it is avaible for filtering if filtering by party name like customer, supplier,item etc
 STRICT OUTPUT
 - Return only JSON.
 - No markdown.

@@ -114,6 +114,8 @@ NEVER return empty sql. Always generate the best possible perfect SELECT query u
 - Output ONLY raw JSON. No explanation. No markdown. No extra keys.
 Never ever give empty sql.that is wrong.also donot give syntax errors in sql.
 also do not assume fields or tables if they are not in the given schema.
+also Apply docstatus = 1 only for submitted transactional ERP documents such as Sales Invoice, Purchase Invoice, Sales Order, Purchase Order, Payment Entry, Journal Entry, Delivery Note, Purchase Receipt, Stock Entry, Work Order, and similar transaction records.
+Do NOT apply docstatus filters to master data documents such as Customer, Supplier, Item, Employee, Warehouse, Project, Lead, Opportunity, Address, Contact, Company, Territory, Country, Currency, UOM, Cost Center, Department, and other master records unless the user explicitly asks for Draft, Submitted, or Cancelled records.
 - Output Format:
 {
   "sql": "<MARIADB_SQL>",
