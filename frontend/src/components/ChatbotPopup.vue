@@ -64,8 +64,8 @@
       <ChatForm
         ref="chatFormRef"
         :placeholder="localTab === 'support' ? 'Message Support...' : 'Message...'"
-        :disabled="localTab === 'chat' && isAwaitingResponse"
-        :isAwaitingResponse="localTab === 'chat' && isAwaitingResponse"
+        :disabled="isAwaitingCurrentTabResponse"
+        :isAwaitingResponse="isAwaitingCurrentTabResponse"
         @submit="(text) => $emit('submit', text)"
         @cancel="$emit('cancelResponse')"
       />
@@ -99,7 +99,8 @@ const props = defineProps({
   ttsConfig: { type: Object, required: true },
   activeTtsProvider: { type: String, required: true },
   settings: { type: Object, default: null },
-  isAwaitingResponse: { type: Boolean, default: false },
+  isAwaitingChatResponse: { type: Boolean, default: false },
+  isAwaitingSupportResponse: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'submit', 'cancelResponse', 'update:activeTab', 'toggleAutoRead', 'togglePollyPreference', 'toggleDebug','toggleSendNonERP'])
@@ -109,6 +110,12 @@ const chatFormRef = ref(null)
 const localTab = ref(props.activeTab)
 const windowMode = ref('default')
 const showScrollButton = ref(false)
+
+const isAwaitingCurrentTabResponse = computed(() => {
+  if (localTab.value === 'support') return props.isAwaitingSupportResponse
+  if (localTab.value === 'chat') return props.isAwaitingChatResponse
+  return false
+})
 
 const SCROLL_BUTTON_THRESHOLD = 56
 

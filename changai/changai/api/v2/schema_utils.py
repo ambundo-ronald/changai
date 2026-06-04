@@ -11,16 +11,78 @@ import yaml
 from frappe.utils import getdate
 from frappe import _
 from pathlib import Path
+from collections import OrderedDict, defaultdict
+
+_PHONETIC_BUCKETS = defaultdict(list)
+import jellyfish
+from rapidfuzz import fuzz, process
+_VALUE_TO_FIELD = {} 
 
 
-def word_match(entity_word,values):
+def phonetic_bucket():
+    global _PHONETIC_BUCKETS, _VALUE_TO_FIELD
     from changai.changai.api.v2.auto_gen_api import _read_filedoctype
-    from changai.changai.api.v2.text2sql_pipeline_v2 import is_erp_query
     master_data_content = _read_filedoctype("master_data.yaml")
     master_items = master_data_content["data"]
-    values = [item["filters"]["value"] for item in master_items]
-    response = is_erp_query(True, entity_word, values, 70)
-    return response
+    for item in master_items:
+        table = item["entity_type"]
+        field = item["filters"]["field"]
+        value = item["filters"]["value"]
+        _VALUE_TO_FIELD[value] = f"{table}.{field}:{value}"
+        first_word = value.split()[0]
+        key = jellyfish.metaphone(first_word)
+        _PHONETIC_BUCKETS[key].append(value)
+
+
+@frappe.whitelist(allow_guest=False)
+def phonetic_match(isreport: bool, word: str, threshold: int = 60):
+    global _PHONETIC_BUCKETS, _VALUE_TO_FIELD
+
+    original_word = word
+
+    candidates = []
+    seen = set()
+
+    phonetic_bucket()
+
+    # check EVERY word in the query
+    for token in original_word.split():
+        if len(token) <= 2:
+            continue
+
+        key = jellyfish.metaphone(token)
+
+        for value in _PHONETIC_BUCKETS.get(key, []):
+            if value not in seen:
+                seen.add(value)
+                candidates.append(value)
+
+    if not candidates:
+        return {
+            "entity_labels": [],
+            "reason": "no phonetic candidates found"
+        }
+
+    result = process.extract(
+        original_word,
+        candidates,
+        scorer=fuzz.WRatio,
+        limit=5,
+        score_cutoff=threshold
+    )
+
+    results = []
+
+    for match, score, _ in result:
+        label = _VALUE_TO_FIELD.get(match)
+
+        if label:
+            results.append(label)
+
+    return {
+        "entity_labels": results,
+        "reason": "phonetic match found"
+    }
         
 
 
@@ -157,6 +219,49 @@ MASTER_DOCTYPES = [
     "Account"
 ]
 
+
+def is_doctype_schema_changed(doc,last_sync):
+    doctype_modified = frappe.db.get_value(
+        "DocType",
+        doc,
+        "modified"
+    )
+    custom_field_modified = frappe.db.get_value(
+        "Custom Field",
+        {"dt": doc},
+        "max(modified)"
+    )
+    property_setter_modified = frappe.db.get_value(
+        "Property Setter",
+        {"doc_type": doc},
+        "max(modified)"
+    )
+    latest = max(
+        [
+            d for d in [
+                doctype_modified,
+                custom_field_modified,
+                property_setter_modified
+            ] if d
+        ],
+        default=None
+    )
+    if latest and last_sync and bool(getdate(latest) > getdate(last_sync)):
+        return True
+    return False
+
+
+def is_master_data_changed(last_sync):
+    for doc in MASTER_DOCTYPES:
+        latest_modified = frappe.db.get_value(
+            doc,
+            {},
+            "max(modified)"
+        )
+        return bool(getdate(latest_modified) > getdate(last_sync)) if latest_modified and last_sync else False
+    return False
+
+
 @frappe.whitelist(allow_guest=False)
 def check_file_updates(file_name :str):
     settings = frappe.get_single("ChangAI Settings")
@@ -169,35 +274,41 @@ def check_file_updates(file_name :str):
 
     if not last_sync:
         return {
-            "update_status": False,
-            "data": True,
+            "is_stale": False,
+            "data": False,
             "days": 0,
             "last_sync": None
         }
 
     if file_name == "schema.yaml":
-        changed = frappe.db.exists(
-            "DocType",
-            {
-                "modified": [">", last_sync]
-            }
-        )
-
-    elif file_name == "master_data.yaml":
         changed = False
-        for doc in MASTER_DOCTYPES:
-            if frappe.db.exists(doc, {"modified": [">", last_sync]}):
+        doctypes = frappe.db.get_all("DocType", {"istable": 0}, pluck="name")
+        for doc in doctypes:
+            if is_doctype_schema_changed(doc, last_sync):
                 changed = True
                 break
 
-    days = days_diff(today(), getdate(last_sync))
 
-    return {
-        "update_status": not bool(changed),
-        "data": True,
-        "days": days,
-        "last_sync": last_sync
-    }
+    elif file_name == "master_data.yaml":
+        changed = False
+        if is_master_data_changed(last_sync):
+            changed = True
+
+    days = days_diff(today(), getdate(last_sync))
+    if changed == True:
+        return {
+            "is_stale": True,
+            "data": True,
+            "days": days,
+            "last_sync": last_sync
+        }
+    else:
+        return {
+            "is_stale":False,
+            "data": True,
+            "days": days,
+            "last_sync": last_sync
+        }
 
 
 @frappe.whitelist()
@@ -273,9 +384,3 @@ def convert_yaml_schema_to_sqlglot_meta() -> dict:
             "ok": False,
             "message": str(e)
         }
-    
-@frappe.whitelist(allow_guest=False)
-def test():
-        res=check_file_updates("master_data.yaml")
-        if not res.get("update_status"):
-            frappe.throw(_("Please update master data for entity recognition to work. Click on Update Master Data button in Training tab in ChangAI Settings.<br>Check Quick Start Guide Here 👇"))

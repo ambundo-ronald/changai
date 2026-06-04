@@ -63,7 +63,8 @@ def ensure_file_folder(folder_path: str, is_private: int = 1) -> str:
         current_path = next_path
 
     return current_path
-@frappe.whitelist(allow_guest=False)
+
+
 def get_mod(app_names: list[str]):
     if isinstance(app_names, str):
         app_names = frappe.parse_json(app_names)
@@ -275,8 +276,27 @@ def sync_master_data_smart() -> Dict[str, Any]:
         removed_total += len(removed_ids)
 
         for rec in live_records:
-            entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
-            rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
+            if mod == "Item":
+                item_code = rec.get("name")
+                if item_code:
+                    rebuilt_rows.append(
+                _build_master_data_row(
+                    entity_type,
+                    item_code,
+                    "name"
+                ))
+                item_name = rec.get(title_field)
+                if item_name:
+                    rebuilt_rows.append(
+                _build_master_data_row(
+                    entity_type,
+                    item_name,
+                    title_field
+                )
+            )
+            else:                    
+                entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
+                rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
 
     final_data = rebuilt_rows
 
@@ -313,7 +333,7 @@ def _clean_schema_fields(by_table: Dict[str, Dict[str, Any]]) -> None:
                 field.pop("join_hint", None)
 
 
-@frappe.whitelist(allow_guest=False)
+
 def get_doctypes_changed_since(last_sync: Optional[str]) -> List[str]:
     app_names=["erpnext","frappe"]
     erpnext_modules = get_mod(app_names)
@@ -352,6 +372,7 @@ def get_doctypes_changed_since(last_sync: Optional[str]) -> List[str]:
     return results
 TABLES_JSON = "tables.json"
 YML_EXTENSIONS = (".yaml", ".yml")
+REPORTS_JSON = "reports.json"
 
 
 def _normalize_schema_payload(payload: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
@@ -536,9 +557,10 @@ def _write_schema_outputs(
     by_table: Dict[str, Dict[str, Any]],
     current_tables: List[str],
 ) -> None:
+    reports = []
     ordered_blocks = [by_table[t] for t in current_tables if t in by_table]
     final_tables = [block["table"] for block in ordered_blocks]
-
+    reports = frappe.get_all("Report",fields=["name","report_name","ref_doctype"])
     write_filedoctype(
         SCHEMA_YAML,
         {"_meta": meta, "tables": ordered_blocks},
@@ -547,6 +569,11 @@ def _write_schema_outputs(
     write_filedoctype(
         TABLES_JSON,
         final_tables,
+        folder=RAG_FOLDER,
+    )
+    write_filedoctype(
+        REPORTS_JSON,
+        reports,
         folder=RAG_FOLDER,
     )
 
@@ -567,7 +594,8 @@ def _process_schema_table(table: str, by_table: Dict[str, Dict[str, Any]]) -> bo
 
     frappe.clear_cache(doctype=dt)
     meta_dt = frappe.get_meta(dt)
-
+    block = by_table.setdefault(table, {})
+    block["is_table"] = bool(meta_dt.istable)
     existing_fields = _get_existing_fields_for_table(by_table, table)
     fields = _build_fields_from_meta(meta_dt, existing_fields)
     _update_or_create_table_block(by_table, table, fields)
@@ -678,7 +706,7 @@ def sync_tables_and_schema_smart() -> Dict[str, Any]:
     changed_tables = {_tab(dt) for dt in changed_doctypes}
     missing_from_schema = {t for t in current_tables if t not in by_table}
 
-    tables_to_process =current_tables
+    tables_to_process = current_tables
 
     for table in tables_to_process:
         _process_schema_table(table, by_table)

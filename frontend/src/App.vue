@@ -2,7 +2,7 @@
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import ChatbotToggler from './components/ChatbotToggler.vue'
 import ChatbotPopup from './components/ChatbotPopup.vue'
-import { starupCall, runPipelineCancelable, callSupportBot, getSettingsDetails } from './utils/frappe.js'
+import { runPipelineCancelable, callSupportBotCancelable, getSettingsDetails } from './utils/frappe.js'
 import { getOrCreateChatId, getPollyPreference, setPollyPreference } from './utils/session.js'
 import { normalizeBotText, getErrorText, safeStringify } from './utils/helpers.js'
 const showChatbot = ref(false)
@@ -27,7 +27,9 @@ const ttsConfig = ref({
 })
 const activeTtsProvider = ref('off')
 const cancelPendingChatRequest = ref(null)
+const cancelPendingSupportRequest = ref(null)
 const isAwaitingChatResponse = computed(() => cancelPendingChatRequest.value !== null)
+const isAwaitingSupportResponse = computed(() => cancelPendingSupportRequest.value !== null)
 
 function updateProviderFromSettings() {
   if (!ttsConfig.value.enableVoiceChat) {
@@ -126,8 +128,9 @@ async function handleChatSubmit(message) {
   const requestId = `${chatId}_${Date.now()}`
   const sendNonErptoAI = sendNonERPtoaiEnabled.value
   console.log('sendNonErptoAI value being sent:', sendNonErptoAI, typeof sendNonErptoAI)
-  const request = runPipelineCancelable(message,chatId, responseMode.value,requestId,sendNonERPtoaiEnabled.value)
   const eventName = `debug_${requestId}`
+  frappe.realtime.on(eventName, onPipelineUpdate)
+  const request = runPipelineCancelable(message,chatId, responseMode.value,requestId,sendNonERPtoaiEnabled.value)
   let lastStepTime = Date.now()
   const steps = []
   const onPipelineUpdate = (msg) => {
@@ -135,10 +138,12 @@ async function handleChatSubmit(message) {
   const seconds = ((now - lastStepTime) / 1000).toFixed(2)
   lastStepTime = now
   console.log('REALTIME STEP', msg)
-  const step = `${msg.message} (${seconds}s)`
   if (msg.message) {
+  const step = `${msg.message} (${seconds}s)`
   steps.push(step)
   currentDebug.value = step
+  thinkingMsg.text = msg.message
+  thinkingMsg.statusType = 'pipeline'
 }
 
   if (!msg.done && msg.message) {
@@ -158,18 +163,17 @@ if (msg.done) {
     thinkingMsg.statusType = null
   }
 
-  frappe.realtime.off(eventName)
+  frappe.realtime.off(eventName, onPipelineUpdate)
   currentDebug.value = null
   return
 }
 }
 
-  frappe.realtime.on(eventName, onPipelineUpdate)
   cancelPendingChatRequest.value = () => {
   if (cancelled) return
   cancelled = true
   request.cancel()
-  frappe.realtime.off(eventName)
+  frappe.realtime.off(eventName, onPipelineUpdate)
   thinkingMsg.isStatus = false
   thinkingMsg.statusType = null
   thinkingMsg.text = 'Cancelled by user.'
@@ -182,8 +186,108 @@ if (msg.done) {
   thinkingMsg.cancelable = false
   cancelPendingChatRequest.value = null
 }
-  try {
-    const response = await request.promise
+try {
+  const response = await request.promise
+  if (response?.open_report)
+  {
+    thinkingMsg.isStatus = false
+    thinkingMsg.statusType = null
+    thinkingMsg.text = `Opening "${response.report_name}" report." `
+    debugLogs.value.push({
+      type: 'success',
+      steps: [...steps],
+      final_response: response,
+      entity_raw: response.entity_raw
+    })
+    currentDebug.value = null
+    if (!response.report_name) {
+      thinkingMsg.text = `Report name extraction failed.Can you ask the same question again?`
+      return
+    }
+    frappe.set_route('query-report', response.report_name, response.filters || {})
+    return
+  }
+else if (response?.create_entity) {
+  thinkingMsg.isStatus = false
+  thinkingMsg.statusType = null
+  thinkingMsg.cancelable = false
+  thinkingMsg.text = `Opening "${response.doc}" doctype for creating Entity "${response.entity_name}" record.`
+
+  debugLogs.value.push({
+    type: 'success',
+    user: message,
+    steps: [...steps],
+    final_response: response,
+  })
+
+  currentDebug.value = null
+
+  const doctype = response.doc
+  const entityName = response.entity_name || ""
+
+  const defaultMap = {
+    Customer: {
+      customer_name: entityName
+    },
+    Supplier: {
+      supplier_name: entityName
+    },
+    Employee: {
+      employee_name: entityName
+    },
+    Item: {
+      item_code: entityName,
+      item_name: entityName
+    },
+    Project: {
+      project_name: entityName
+    },
+    Lead: {
+      lead_name: entityName
+    },
+    Opportunity: {
+      opportunity_name: entityName
+    }
+  }
+
+  const defaults = defaultMap[doctype] || {}
+
+  frappe.route_options = defaults
+
+  frappe.set_route("Form", doctype, "new")
+
+  const timer = setInterval(() => {
+    if (cur_frm && cur_frm.doctype === doctype && cur_frm.is_new()) {
+      clearInterval(timer)
+
+      Object.entries(defaults).forEach(([field, value]) => {
+        if (value && cur_frm.fields_dict[field]) {
+          cur_frm.set_value(field, value)
+          cur_frm.refresh_field(field)
+        }
+      })
+    }
+  }, 200)
+
+  return
+}
+if (response?.stop_followup) {
+  thinkingMsg.isStatus = false
+  thinkingMsg.statusType = null
+  thinkingMsg.cancelable = false
+  thinkingMsg.text = response.message || 'You’re welcome!'
+
+  debugLogs.value.push({
+    type: 'stop_followup',
+    user: message,
+    steps: [...steps],
+    final_response: response,
+  })
+
+  currentDebug.value = null
+  return
+}
+
     if (cancelled) return
     thinkingMsg.cancelable = false
     const finalBotText = normalizeBotText(response?.Bot)?.trim() || 'No response.'
@@ -199,7 +303,7 @@ if (msg.done) {
     currentDebug.value = null
   } catch (err) {
     if (cancelled) return
-    frappe.realtime.off(eventName)
+    frappe.realtime.off(eventName, onPipelineUpdate)
     thinkingMsg.cancelable = false
     thinkingMsg.isStatus = false
     thinkingMsg.statusType = null
@@ -212,17 +316,19 @@ if (msg.done) {
   error: errorText,
 })
     console.error('ChangAI API Error:', err)
-    if (error === "ERR_NETWORK_CHANGED"){
+    if (err?.code === "ERR_NETWORK_CHANGED" || err?.message?.includes("ERR_NETWORK_CHANGED")){
     thinkingMsg.isStatus = false
     thinkingMsg.statusType = null
     thinkingMsg.text = '⚠️ Network error. Please check your connection and try again.'
 
     }
+    else{
     thinkingMsg.isStatus = false
     thinkingMsg.statusType = null
     thinkingMsg.text = '⚠️ Something went wrong. Please try again.'
+    }
   } finally {
-  frappe.realtime.off(eventName)
+  frappe.realtime.off(eventName, onPipelineUpdate)
   if (!cancelled) {
     cancelPendingChatRequest.value = null
   }
@@ -232,6 +338,11 @@ if (msg.done) {
 }
 
 function handleCancelResponse() {
+  if (activeTab.value === 'support') {
+    cancelPendingSupportRequest.value?.()
+    return
+  }
+
   cancelPendingChatRequest.value?.()
 }
 
@@ -245,12 +356,35 @@ async function handleSupportSubmit(message) {
   await nextTick()
   scrollToBottom()
 
+  let cancelled = false
+  const request = callSupportBotCancelable(message, responseMode.value)
+
+  cancelPendingSupportRequest.value = () => {
+    if (cancelled) return
+    cancelled = true
+    request.cancel()
+    thinkingMsg.isStatus = false
+    thinkingMsg.statusType = null
+    thinkingMsg.text = 'Cancelled by user.'
+    cancelPendingSupportRequest.value = null
+  }
+
   try {
-    const response = await callSupportBot(message, responseMode.value)
+    const response = await request.promise
+    if (cancelled) return
+    thinkingMsg.isStatus = false
+    thinkingMsg.statusType = null
     thinkingMsg.text = response ? safeStringify(response) : 'Support request sent successfully.'
   } catch (err) {
+    if (cancelled) return
     console.error('Support API Error:', err)
+    thinkingMsg.isStatus = false
+    thinkingMsg.statusType = null
     thinkingMsg.text = '⚠️ Failed to reach support. Please try again.'
+  } finally {
+    if (!cancelled) {
+      cancelPendingSupportRequest.value = null
+    }
   }
 
   await nextTick()
@@ -288,7 +422,8 @@ onBeforeUnmount(() => {
     :ttsConfig="ttsConfig"
     :activeTtsProvider="activeTtsProvider"
     :settings="settings"
-    :isAwaitingResponse="isAwaitingChatResponse"
+    :isAwaitingChatResponse="isAwaitingChatResponse"
+    :isAwaitingSupportResponse="isAwaitingSupportResponse"
     :debugEnabled="debugEnabled"
     :sendNonERPtoaiEnabled="sendNonERPtoaiEnabled"
     @toggleDebug="debugEnabled = !debugEnabled"
