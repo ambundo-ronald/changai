@@ -3201,7 +3201,7 @@ def is_thread_erp(q:str,chat_id:str):
 
 from rapidfuzz import fuzz
 @frappe.whitelist()
-def find_similar_log_question(new_question, threshold=90):
+def find_similar_log_question(new_question:str, threshold: int = 90):
     logs = frappe.get_all(
         "ChangAI Logs",
         fields=["name", "user_question", "sql_generated","rewritten_question","fields","tables","error","entity","result"],
@@ -3703,68 +3703,7 @@ def guardrail_router_dup(
         "error": None
     }
 
-@frappe.whitelist(allow_guest=True)
-def call_entity_retriever_dup(
-    isreport: bool,
-    qstn: str,
-    entity_words: list
-) -> Dict[str, Any]:
 
-    from changai.changai.api.v2.schema_utils import phonetic_match
-
-    cards = []
-    debug = []
-    doc = None
-
-    if not entity_words:
-        return {
-            "cards": [],
-            "doc": None
-        }
-
-    for word in entity_words:
-        result = phonetic_match(isreport, word)
-        labels = result.get("entity_labels") or []
-
-        debug.append({
-            "word": word,
-            "result": result,
-            "labels": labels
-        })
-
-        for label in labels:
-            if isreport:
-                try:
-                    table_field, _ = label.split(":", 1)
-                    table, field = table_field.split(".", 1)
-                    doc = table.removeprefix("tab")
-                except Exception:
-                    pass
-
-            if label and label not in cards:
-                cards.append(label)
-
-    return {
-        "cards": cards,
-        "doc": doc,
-        "debug": debug
-    }
-
-
-@frappe.whitelist(allow_guest=False)
-def run_text2sql_pipeline_dup(user_question: str, chat_id: str, request_id: str, sendNonErptoAI: bool = False) -> Dict:
-    memory_status = check_memory_status()
-    logs = find_similar_log_question(user_question)
-    return logs
-    if logs.get("matched") and logs["error"] == "None" and logs.get("rewritten_question") != "Not formatted as its NONERP":
-        return {
-            "message": "Hello Hi"
-        }
-    return{"message":"No Match"}
-    # if logs.get("matched") and not logs.get("error"):
-    #     return True,logs
-
-@frappe.whitelist(allow_guest=True)
 def match_report_intent(report_intent: str):
     choices = list(REPORT_INTENT_MAP.keys())
     match = process.extractOne(
