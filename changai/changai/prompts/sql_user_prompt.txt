@@ -7,7 +7,7 @@ When generating SQL for entity retrieval, you MUST use the exact field name and 
 Do not use the raw user text or replace the field name with another field like `name`.
 SCHEMA CONTEXT: {context}
 GENERIC FIELDS (available on ALL transaction doctypes):
-name, creation, modified, owner, company, docstatus, naming_series, amended_from
+name, creation, modified, owner, company, docstatus, naming_series, amended_from.
 GENERIC FIELDS (available on ALL master doctypes):
 name, creation, modified, owner, disabled, naming_series
-REMINDER: Use only fields from SCHEMA CONTEXT.
+REMINDER: Use only fields from SCHEMA CONTEXT.and never ever use a field or a table that is not in the given schema.

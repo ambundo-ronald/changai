@@ -25,49 +25,64 @@ def phonetic_bucket():
     master_data_content = _read_filedoctype("master_data.yaml")
     master_items = master_data_content["data"]
     for item in master_items:
+        table = item["entity_type"]
         field = item["filters"]["field"]
         value = item["filters"]["value"]
-        _VALUE_TO_FIELD[value] = f"{field}:{value}"
+        _VALUE_TO_FIELD[value] = f"{table}.{field}:{value}"
         first_word = value.split()[0]
         key = jellyfish.metaphone(first_word)
         _PHONETIC_BUCKETS[key].append(value)
 
 
 @frappe.whitelist(allow_guest=False)
-def phonetic_match(word:str, threshold: int=65):
+def phonetic_match(isreport: bool, word: str, threshold: int = 60):
     global _PHONETIC_BUCKETS, _VALUE_TO_FIELD
+
+    original_word = word
+
     candidates = []
     seen = set()
-    
+
     phonetic_bucket()
-    
+
     # check EVERY word in the query
-    for word in word.split():
-        if len(word) <= 2:   # skip "Al", "Al", short words
+    for token in original_word.split():
+        if len(token) <= 2:
             continue
-        key = jellyfish.metaphone(word)
+
+        key = jellyfish.metaphone(token)
+
         for value in _PHONETIC_BUCKETS.get(key, []):
             if value not in seen:
                 seen.add(value)
                 candidates.append(value)
-    
+
     if not candidates:
-        return {"entity_labels": None, "reason": "no phonetic candidates found"}
-    
+        return {
+            "entity_labels": [],
+            "reason": "no phonetic candidates found"
+        }
+
     result = process.extract(
-        word, 
-        candidates, 
+        original_word,
+        candidates,
         scorer=fuzz.WRatio,
         limit=5,
         score_cutoff=threshold
     )
-    results = [] 
-    for match, score, _ in result:
-        results.append(_VALUE_TO_FIELD.get(match))
-    return {"entity_labels": results, "reason": "phonetic match found"}
 
-    # response = is_erp_query(True, entity_word, values, 70)
-    # return response
+    results = []
+
+    for match, score, _ in result:
+        label = _VALUE_TO_FIELD.get(match)
+
+        if label:
+            results.append(label)
+
+    return {
+        "entity_labels": results,
+        "reason": "phonetic match found"
+    }
         
 
 

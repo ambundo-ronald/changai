@@ -54,6 +54,7 @@ _GEMINI_CONFIG = None
 _FIELD_DOCS_CACHE = None
 _FIELD_EMBS_CACHE = None
 _TABLE_TO_IDX_CACHE = None
+_VS_REPORT=None
 _KEYWORDS_SET=None
 _KEYWORDS_LIST=None
 ERPGULF_LINK = "https://app.erpgulf.com/en/products/chang-ai-an-ai-agent"
@@ -326,6 +327,7 @@ Check Quick Start Guide Here 👇:
 {CHANGAI_GUIDE_LINK}"""
 MODEL_ID = "gemini-2.5-flash-lite"
 RETRY_LIMIT = 2
+REPORT_INTENT_MAP  = read_asset("report_intent_map.json",base="assets")
 bk = read_asset("business_keywords_v1.json", base="assets")
 BUSINESS_KEYWORDS = bk.get("business_keywords", bk)
 
@@ -1020,7 +1022,14 @@ def _safe_strip(v):
 
 # Shared State
 class SQLState(TypedDict, total=False):
+    filters:str
     entity_type_list:List[str]
+    create_entity:bool
+    open_report:bool
+    report_name:str
+    entity_name:str
+    doc:str
+    reports_filter_before_call:list
     entity_type:str
     final_prompt:str
     request_id: str
@@ -1048,6 +1057,19 @@ class SQLState(TypedDict, total=False):
     selected_tables: List[str]
     top_fields: Dict[str, Any]
     selected_fields: str
+    message:str
+    stop_followup:bool
+
+def route_action(state: SQLState) -> str:
+    if state.get("stop_followup"):
+        return "STOP_FOLLOW"
+    if state.get("create_entity"):
+        return "CREATE_ENTITY"
+
+    if state.get("open_report"):
+        return "OPEN_REPORT"
+
+    return "CONTINUE"
 
 
 def fill_sql_prompt(question: str, context: str) -> str:
@@ -1207,6 +1229,15 @@ def _parse_rewrite_response(raw: Any, user_qstn: str) -> Tuple[str, bool]:
     standalone = ""
     contains_values = False
     obj = None
+    doc = None
+    entity_words = []
+    stop_followup =False
+    entity_name = None
+    report_name = None
+    open_report = False
+    create_entity = False
+    report_intent = None
+    message=None
 
     if isinstance(raw, dict):
         obj = raw
@@ -1221,24 +1252,42 @@ def _parse_rewrite_response(raw: Any, user_qstn: str) -> Tuple[str, bool]:
     if isinstance(obj, dict):
         standalone = (obj.get("standalone_question") or "").strip() or standalone
         contains_values = bool(obj.get("contains_values"))
-        entity_words = obj.get("entity_word") or [] if contains_values else []
+        entity_words = obj.get("entity_words") or [] if contains_values else []
+        create_entity = bool(obj.get("create_entity"))
+        create_entity = obj.get("create_entity") if create_entity else False
+        if create_entity :
+            doc = obj.get("doctype")
+            entity_name = obj.get("entity_name")
+        open_report = bool(obj.get("open_report"))
+        if open_report:
+            report_name = obj.get("report_name")
+            report_intent = obj.get("report_intent")
+        stop_followup = bool(obj.get("stop_followup"))
+        if stop_followup:
+            message = obj.get("message")
+
     elif isinstance(obj, list) and not standalone:
         standalone = json.dumps(obj)
 
-    return standalone or user_qstn.strip(), contains_values, entity_words
+    return standalone or user_qstn.strip(), contains_values, entity_words,create_entity, doc,entity_name,report_name,open_report,report_intent,stop_followup,message
 
 SQL_REWRITE_SYS_PROMPT = read_asset("sql_rewrite_sys_prompt.txt", base="prompts")
 SQL_REWRITE_USER_PROMPT = read_asset("sql_rewrite_user_prompt.txt", base="prompts")
 def rewrite_question(state: SQLState) -> SQLState:
+    report_intent = None
     request_id = state.get("request_id")
     user_qstn = state.get("question") or ""
     session_id = state.get("session_id")
+    entity_words = []
     sys_prompt = SQL_REWRITE_SYS_PROMPT
     prompt = inject_prompt(user_qstn, session_id)
-
+    report_name_new=None
     try:
         raw = call_model(prompt, "llm",sys_prompt)
-        standalone, contains_values,entity_words = _parse_rewrite_response(raw, user_qstn)
+        standalone, contains_values,entity_words,create_entity, doc,entity_name,report_name,open_report,report_intent,stop_followup,message = _parse_rewrite_response(raw, user_qstn)
+        if report_intent:
+            report_name_new = match_report_intent(report_intent)
+
 
         publish_pipeline_update(
             request_id,
@@ -1249,11 +1298,19 @@ def rewrite_question(state: SQLState) -> SQLState:
 
         return {
             **state,
+            "report_name":report_name_new or report_name or "",
+            "report_intent": report_intent,
+            "open_report":open_report,
+            "create_entity":create_entity,
+            "entity_name":entity_name if create_entity else None,
+            "doc":doc if create_entity else None,
             "formatted_q": standalone,
             "contains_values": contains_values,
             "entity_words": entity_words,
             "formatting_prompt": prompt,
             "error": None,
+            "message":message if stop_followup else None,
+            "stop_followup": stop_followup
         }
     
     except frappe.exceptions.ValidationError:
@@ -1270,38 +1327,50 @@ def rewrite_question(state: SQLState) -> SQLState:
         return {**state, "error": str(e)}
 
 
-def get_table_vs():
-    global _VS_TABLE
+def get_vs(istable: bool):
+    global _VS_TABLE, _VS_REPORT
 
-    if _VS_TABLE is None:
-        emb = get_embedding_engine()
-        if emb is None:
-            frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
+    emb = get_embedding_engine()
+    if emb is None:
+        frappe.throw(_(EMBEDDING_ENGINE_NONE_MESSG))
 
-        # get app root dynamically
-        app_path = frappe.get_app_path("changai")
+    app_path = frappe.get_app_path("changai")
 
-        table_vs_path = os.path.join(
-            app_path,
-            "changai",
-            "api",
-            "v2",
-            "fvs_stores",
-            "erpnext",
-            "table_fvs"
-        )
+    if istable:
+        if _VS_TABLE is None:
+            table_vs_path = os.path.join(
+                app_path, "changai", "api", "v2",
+                "fvs_stores", "erpnext", "table_fvs"
+            )
 
-        if not os.path.exists(table_vs_path):
-            frappe.throw(_("FAISS table store not found at {0}\n"
-            "Check Quick Start Guide Here 👇:\n {1}").format(table_vs_path,CHANGAI_GUIDE_LINK))
+            if not os.path.exists(table_vs_path):
+                frappe.throw(_("FAISS table store not found at {0}").format(table_vs_path))
 
-        _VS_TABLE = FAISS.load_local(
-            table_vs_path,
-            emb,
-            allow_dangerous_deserialization=True
-        )
+            _VS_TABLE = FAISS.load_local(
+                table_vs_path,
+                emb,
+                allow_dangerous_deserialization=True
+            )
 
-    return _VS_TABLE
+        return _VS_TABLE
+
+    else:
+        if _VS_REPORT is None:
+            report_vs_path = os.path.join(
+                app_path, "changai", "api", "v2",
+                "fvs_stores", "erpnext", "report_fvs"
+            )
+
+            if not os.path.exists(report_vs_path):
+                frappe.throw(_("FAISS report store not found at {0}").format(report_vs_path))
+
+            _VS_REPORT = FAISS.load_local(
+                report_vs_path,
+                emb,
+                allow_dangerous_deserialization=True
+            )
+
+        return _VS_REPORT
 
 
 
@@ -1386,7 +1455,45 @@ def _get_cached_embedding(q: str, request_id: str) -> tuple:
     return tuple(vec)  # tuple for hashability
 
 
-def call_fvs_table_search(q: str, request_id: str) -> List[str]:
+def create_entity(state:SQLState):
+    request_id = state.get("request_id")
+    res = call_fvs_table_search(True, state.get("formatted_q"), state.get("request_id"))
+    prompt = f"""You are selecting the correct ERPNext DocType for entity creation.
+User query:
+{state.get("formatted_q")}
+Candidate DocTypes:
+{res[:10]}
+Rules:
+- Choose only one DocType from the candidate list.
+- Use only the given candidate DocTypes.
+- Do not add the "tab" prefix.
+- Return only valid JSON.
+- Do not return explanations or extra text.
+- If no suitable DocType is found, return {{"doctype": ""}}.
+Output format:
+{{"doctype": "chosen_doctype_name"}}
+
+    """
+    publish_pipeline_update(
+    request_id,
+    "Detecting doctype for creation",
+    "Detecting doctype for creation",
+    done=True
+)
+    res = call_gemini(prompt,"")
+    try:
+        if isinstance(res, str):
+            res = res.replace("```json", "").replace("```", "").strip()
+            result = json.loads(res)
+            doctype = result.get("doctype", "")
+        return {**state,"doc": doctype}
+    except json.JSONDecodeError as e:
+        return {**state,"error":str(e)}
+
+
+
+
+def call_fvs_table_search(get_table: bool, q: str, request_id: str) -> List[str]:
     # get cached embedding
     publish_pipeline_update(
             request_id,
@@ -1401,7 +1508,7 @@ def call_fvs_table_search(q: str, request_id: str) -> List[str]:
             "q_vec_ready",
             _("q_vec_ready")
         )
-    vs = get_table_vs()
+    vs = get_vs(get_table)
     publish_pipeline_update(
             request_id,
             "vs_ready",
@@ -1420,7 +1527,7 @@ def call_fvs_table_search(q: str, request_id: str) -> List[str]:
             continue
         doc_id = vs.index_to_docstore_id[idx]
         doc = vs.docstore.search(doc_id)
-        t = doc.metadata.get("table")
+        t = doc.metadata.get("table") if get_table else doc.metadata.get("report_name")
         if t and t not in seen:
             seen.add(t)
             out.append(t)
@@ -1451,7 +1558,7 @@ def build_hnsw_index(embeddings):
 
 def call_retrieve_multi_line(user_question: str, request_id: str) -> Dict[str, Any]:
     try:
-        top_tables = call_fvs_table_search(user_question, request_id)
+        top_tables = call_fvs_table_search(True, user_question, request_id)
         publish_pipeline_update(
             request_id,
             "table_retrieval_done",
@@ -1521,6 +1628,7 @@ def call_fvs_field_search_global_k(
         d = docs[doc_i]
 
         meta = getattr(d, "metadata", {}) or {}
+        is_table = meta.get("is_table")
         table = meta.get("table")
         field = meta.get("field") or meta.get("name") 
 
@@ -1545,7 +1653,12 @@ def call_fvs_field_search_global_k(
             opts = meta["options"]
             if isinstance(opts, list):
                 name += " {" + ", ".join(str(o) for o in opts[:5]) + "}"
-        grouped.setdefault(table, []).append(name)
+        grouped.setdefault(table, {
+            "is_table": is_table,
+            "fields": []
+        })
+
+    grouped[table]["fields"].append(name)
     
     res = format_schema_context(grouped)
     # 🔥 final compact string
@@ -1751,7 +1864,7 @@ def local_entity_embedder(q: str) -> List[Dict[str, Any]]:
     return out
 
 
-def call_entity_retriever(qstn: str,state:Dict) -> Dict[str, Any]:
+def call_entity_retriever(isreport: bool, qstn: str, state: Dict) -> Dict[str, Any]:
     config = ChangAIConfig.get()
     if config["REMOTE"] and config["llm"] == "QWEN3":
         response = remote_entity_embedder(qstn)
@@ -1771,11 +1884,26 @@ def call_entity_retriever(qstn: str,state:Dict) -> Dict[str, Any]:
         from changai.changai.api.v2.schema_utils import phonetic_match
         entity_words = state.get("entity_words")
         cards = []
+        debug=[]
+        if entity_words is None:
+            return {"cards":[]}
         for word in entity_words:
-            result = phonetic_match(word)
-            labels = result.get("entity_labels") or []  # ✅ get list from dict
-            
+            result = phonetic_match(isreport, word)
+            labels = result.get("entity_labels") or []
+            debug.append({
+                "word": word,
+                "result": result,
+                "labels": labels
+    })   
             for label in labels:
+                if isreport:
+                    try:
+                        table_field, _  = labels.split(":", 1)
+                        table, field = table_field.split(".", 1)
+                        doctype = table.removeprefix("tab")
+                        state["doc"] =  doctype
+                    except Exception:
+                        pass
                 if label and label not in cards:
                     cards.append(label)
         return {"cards": cards}
@@ -1854,7 +1982,7 @@ def detect_specific_entities(state: SQLState) -> SQLState:
                 "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
             ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
 
-        out = call_entity_retriever(q,state)
+        out = call_entity_retriever(False, q, state)
         return {
             **state,
             "entity_cards": out.get("cards") or [],
@@ -2073,6 +2201,178 @@ Always mention that you are ChangAI by ERPGulf when introducing yourself."""
         return res
 
 
+
+def prepare_report_action(state: SQLState) -> SQLState:
+    report_name = None
+    q = state.get("formatted_q") or state.get("question") or ""
+    request_id = state.get("request_id")
+    report_name = state.get("report_name")
+
+    cards = call_entity_retriever(True, q, state) if state.get("contains_values") else {"cards": []}
+
+    # reports_listed = call_fvs_table_search(False, q, request_id)
+    doctype = state.get("doc") if state.get("doc") else None
+    result = []
+    # for report in reports_listed[:30]:
+    #     report_name = report.get("name") if isinstance(report, dict) else report
+    #     result.append({
+    #         "report": report_name,
+    #         "filters": get_report_filter_fields(report_name)
+    #     })
+    result.append({"report":report_name,"filters": get_report_filter_fields(report_name)})
+    prompt = f"""
+Given the user query:
+{q}
+Detected DocType: use this value only for filtering by party type.
+{doctype}
+Available Report and Filter Fields:
+{result}
+after seeing the reports look wisely at the question and find the intent that speaks of report name take that intent and match with listed reports 
+and find the best matching report name.
+Carefully identify the report intent from the user's question and match only that intent against the available report names. Do not use entity names, entity types, party names, customer names, supplier names, or filter values to choose the report, even if similar words appear in the listed report names. Entity information must be used only for filters, not for report_name selection.
+even if the right report name is not ranked top find it from the top 10 and use it .
+Entity Cards:
+{cards}
+Report selection MUST be based on the user's requested report type first.
+Entity type (Customer, Supplier, Employee, etc.) is only used for filters and MUST NOT determine the report name.
+Examples:
+User: "show account statement for nova supplier"
+Report: General Ledger
+Filters:
+{{
+  "party_type": "Supplier",
+  "party": "nova supplier"
+}}
+TASK
+Select exactly ONE report from the Available Reports and Filter Fields.
+Step 1 - Understand User Intent
+- Analyze the user's intent and meaning carefully.
+- Match reports by meaning and business purpose, not only exact words.
+- Consider synonyms and common ERP terminology.
+Examples:
+- "account statement", "customer statement", "supplier statement", "ledger statement" → usually General Ledger when available.
+- "profit report" → Gross Profit.
+- "trial balance" → Trial Balance.
+- "balance sheet" → Balance Sheet.
+Step 2 - Select the Best Report
+- report_name MUST be selected only from the provided report list.
+- Never invent a report name.
+- Never return an empty report name.
+- Choose the report whose purpose best matches the user's request.
+- If multiple reports are similar, select the one whose available filters best satisfy the user's request.
+- Report selection is more important than filter selection.
+- Do not choose a report simply because a filter matches.
+Step 3 - Apply Filters
+- Use ONLY filters that exist in the selected report.
+- Never invent filter names.
+- Never invent filter values.
+- Use Entity Card values whenever applicable.
+- Apply only relevant filters supported by the selected report.
+Party Filtering Rules
+If:
+- detected DocType is Customer, Supplier, Employee, Shareholder, Student, Member, or any party-type entity
+AND
+- selected report contains both party_type and party filters
+THEN:
+- party_type = detected DocType
+- party = entity value from Entity Card
+Example:
+DocType = Customer
+Entity Card:
+customer_name: مؤسسة الإبداع التجارية
+Filters:
+{{
+  "party_type": "Customer",
+  "party": "مؤسسة الإبداع التجارية"
+}}
+Important:
+- Never infer party_type from the entity value.
+- Always use the detected DocType.
+- Prefer party_type + party over name-based filters whenever both are available.
+Date Rules
+Whenever a report requires date filtering:
+- Convert relative dates into explicit dates.
+- Use DD-MM-YYYY format only.
+- Never use natural language dates.
+Date Format Rules:
+- Always output dates in YYYY-MM-DD format.
+- Never use DD-MM-YYYY, MM-DD-YYYY, or natural language dates.
+- Convert all relative dates to YYYY-MM-DD before returning filters.
+Validation Before Answering
+Verify:
+1. report_name exists in Available Reports.
+2. Every filter exists in the selected report.
+3. Every filter value comes from the user query, Entity Cards, or a valid date conversion.
+4. No invented report names.
+5. No invented filters.
+6. No empty report_name.
+7. Report intent matches the user's request.
+Return ONLY valid JSON:
+{{
+  "report_name": "<selected_report>",
+  "filters": {{
+    "<filter_name>": "<filter_value>"
+  }}
+}}
+
+STRICT OUTPUT
+- Return only JSON.
+- No markdown.
+- No explanations.
+- No comments.
+- Response must start with {{ and end with }}.
+"""
+
+    response = call_model(prompt, "llm", "")
+
+    raw_response = str(response or "").strip()
+    raw_response = raw_response.replace("```json", "").replace("```", "").strip()
+
+    frappe.logger().info(f"prepare_report_action raw response: {repr(raw_response)}")
+
+    if not raw_response:
+        response = {"report_name": "", "filters": {}}
+    else:
+        try:
+            response = json.loads(raw_response)
+        except json.JSONDecodeError:
+            frappe.log_error(
+                f"Invalid JSON from prepare_report_action:\n{raw_response}",
+                "prepare_report_action JSON Error"
+            )
+            response = {"report_name": "", "filters": {}}
+
+    if not isinstance(response, dict):
+        response = {"report_name": "", "filters": {}}
+    publish_pipeline_update(
+        request_id,
+        "Detected Report name & filters",
+        "Detected Report name & filters",
+        data={"report_name": response.get("report_name"),"filters":response.get("filters")},
+        done=True
+    )
+    return {
+        **state,
+        "report_name": response.get("report_name") or "",
+        "filters": response.get("filters") or {},
+        "reports_filter_before_call":result[:30],
+        "entity_cards": cards.get("cards") or [],
+        "entity_raw": cards,
+        "error": None,
+    }
+
+
+# def route_action(state: SQLState):
+#     if state.get("create_entity") is True:
+#         qstn = state.get("user_question")
+#         response = call_fvs_table_search(False, qstn)
+#         return response
+#         return "CREATE_ENTITY"
+#     if state.get("open_report") is True:
+#         return "OPEN_REPORT"
+#     else:
+#         return "CONTINUE"
+
 # Building the Workflow Graph
 workflow=StateGraph(SQLState)
 workflow.add_node("rewrite_question",rewrite_question)
@@ -2085,11 +2385,28 @@ workflow.add_node("validate_sql",validate_sql)
 workflow.add_node("repair_sql",repair_sqlquery)
 workflow.add_node("send_non_erp_request",send_non_erp_request)
 workflow.add_node("routeNonErpToAI",routeNonErpToAI)
+workflow.add_node("prepare_report_action", prepare_report_action)
+workflow.add_node("create_entity", create_entity)
+# workflow.add_node("stop_follow_msg_api", stop_follow_msg_api)
+
+
 workflow.set_entry_point("guardrail_router")
 workflow.add_conditional_edges("guardrail_router",route_guardrail,{"ERP":"rewrite_question","NON_ERP":"routeNonErpToAI"})
 # workflow.add_edge("guardrail_router", "rewrite_question")
 workflow.add_edge("routeNonErpToAI", END)
-workflow.add_edge("rewrite_question", "retrieve")
+workflow.add_conditional_edges(
+    "rewrite_question",
+    route_action,
+    {
+        "CREATE_ENTITY": "create_entity",
+        "OPEN_REPORT": "prepare_report_action",
+        "STOP_FOLLOW":END,
+        "CONTINUE": "retrieve",
+    }
+)
+workflow.add_edge("prepare_report_action", END)
+workflow.add_edge("create_entity", END)
+# workflow.add_edge("stop_follow_msg_api", END)
 workflow.add_edge("retrieve","detect_entities")
 workflow.add_conditional_edges("detect_entities", route_after_entities, {"CONTEXT":"build_context","DIRECT":"generate_sql"})
 workflow.add_edge("build_context", "generate_sql")
@@ -2183,11 +2500,16 @@ def save_logs(
     tries: Optional[int] = None,
     err: Any = None,
     formatted_result: Any = None,
+    tables:Any=None,
+    fields:Any=None,
+    entity_debug:Any=None,
+    type_=None
 ) -> str:
     def to_json_if_needed(v: Any) -> Any:
         if isinstance(v, (dict, list)):
             return json.dumps(v, default=str, ensure_ascii=False)
         return v
+    
     MAX_LOG_LEN = 140
     doc = frappe.new_doc("ChangAI Logs")
     doc.user_question = user_question
@@ -2200,6 +2522,10 @@ def save_logs(
     doc.error = to_json_if_needed(err)
     doc.result = to_json_if_needed(result)
     doc.formatted_result = to_json_if_needed(formatted_result)
+    doc.tables = to_json_if_needed(tables)
+    doc.fields = to_json_if_needed(fields)
+    doc.entity = to_json_if_needed(entity_debug)
+    doc.type = type_
     doc.insert(ignore_permissions=True)
     return doc.name
 
@@ -2588,7 +2914,7 @@ def debug_entity_retriever(q: str,state: SQLState):
     return {
         "query": q,
         "raw_response": resp,
-        "parsed_entity_cards": call_entity_retriever(q,state)
+        "parsed_entity_cards": call_entity_retriever(False, q,state)
     }
 
 
@@ -2616,26 +2942,28 @@ def _invoke_pipeline(user_question: str, chat_id: str, request_id: str,sendNonEr
         return None, {"Bot": "⚠️ An unexpected error occurred. Please try again.", "error": str(e)}
 
 
-def _handle_non_erp(final: SQLState, user_question: str, chat_id: str) -> Dict:
-    non_erp_res = _safe_strip(final.get("non_erp_res", ""))
-    formatted_q = _safe_strip(final.get("formatted_q", ""))
-    err = final.get("error")
+def _handle_non_erp_(non_erp_res,formatted_q,err,user_question: str,request_id:str, chat_id: str) -> Dict:
 
     if not non_erp_res:
         if err:
             frappe.log_error(err, "ChangAI NON_ERP Error")
+            save_logs(user_question=user_question, formatted_q="Not formatted as its NONERP",err=err, result=non_erp_res,type_="NonERP")
+
         return {
             "Question": user_question,
             "Formatted-Question": formatted_q,
             "Bot": err if err else "⚠️ Could not get a response. Please try again.",
         }
-
+    
     if not err and non_erp_res:
         try:
-            save_turn_2(session_id=chat_id, user_text=user_question, bot_text=non_erp_res,type_="non_erp")
-            save_logs(user_question=user_question, formatted_q="Not formatted as its NONERP", result=non_erp_res)
+            publish_pipeline_update(request_id, "mapped to non-erp", "Mapped as NON-ERP")
+            save_turn_2(session_id=chat_id, user_text=formatted_q or user_question, bot_text=non_erp_res,type_="non_erp")
+            save_logs(user_question=user_question, formatted_q="Not formatted as its NONERP",err="None", result=non_erp_res,type_="NonERP")
         except Exception as e:
             frappe.log_error(f"Failed to save NON_ERP logs: {e}", "ChangAI Logs")
+            save_logs(user_question=user_question, formatted_q="Not formatted as its NONERP",err=str(e), result=non_erp_res,type_="NonERP")
+
 
     return {"Question": user_question, "Formatted-Question": formatted_q, "Bot": non_erp_res}
 
@@ -2664,49 +2992,103 @@ def _get_sql_error_message(err: Any, val: Dict) -> str:
 
     return f"⚠️ The model generated an invalid query. {error_text}"
 
+def _handle_sql_result(
+    memory_status: Dict,
+    request_id: str,
+    sql_prompt: Optional[str],
+    final: Optional[Dict],
+    sql: str,
+    orm: Optional[str],
+    formatted_q: Optional[str],
+    fields: Optional[str],
+    selected_tables: Optional[List],
+    val: Optional[Dict],
+    entity_debug: Optional[Dict],
+    user_question: str,
+    chat_id: str
+) -> Dict:
+    final = final or {}
+    val = val or {}
+    entity_debug = entity_debug or {}
+    selected_tables = selected_tables or []
+    fields = fields or ""
+    formatted_q = formatted_q or user_question
 
-def _handle_sql_result(memory_status: Dict, sql_prompt: str, final: SQLState, sql: str, orm: str, formatted_q: str, fields: str,
-                       selected_tables: List, val: Dict, entity_debug: Dict,
-                       user_question: str, chat_id: str) -> Dict:
     try:
-        request_id = final.get("request_id")
-        org_sql = final.get("sql")
+        request_id = request_id or final.get("request_id")
+        org_sql = final.get("sql") or sql
         extracted_tables = extract_tables_from_sql(sql)
-        sql_result = execute_query(sql, extracted_tables)
-        publish_pipeline_update(
-            request_id,
-            "sql_executed",
-            "Query executed"
-        )
-        entity_words=final.get("entity_words")
+        try:
+            sql_result = execute_query(sql, extracted_tables)
+        except Exception as e:
+            # err = str(e)
+            final["error"] = str(e)
+
+        publish_pipeline_update(request_id, "sql_executed", "Query executed")
+
+        entity_words = final.get("entity_words") or []
+
     except Exception as e:
+        final["error"] = str(e)
         return {"ok": False, "error": f"SQL Execution Failed: {e}"}
 
-    context = (final.get("context") or final.get("selected_fields") or "")[:800]
-    contains_values = final.get("contains_values") or ""
+    context = (final.get("context") or final.get("selected_fields") or fields or "")[:800]
+    contains_values = final.get("contains_values") or entity_debug.get("contains_values") or ""
     err = final.get("error")
+
     formatted_result = format_data(user_question, sql_result)
+
     publish_pipeline_update(
-    request_id,
-    "format_data_completed",
-    "Completed Formatting Result",
-    done=True
-)
+        request_id,
+        "format_data_completed",
+        "Completed Formatting Result",
+        done=True
+    )
+
     if not err:
         try:
-            save_turn_2(session_id=chat_id, user_text=formatted_q, bot_text=formatted_result, type_="erp")
-            save_logs(user_question=user_question, formatted_q=formatted_q, context=context,
-                      sql=sql, val=val, result=sql_result, formatted_result=formatted_result)
+            save_turn_2(
+                session_id=chat_id,
+                user_text=formatted_q,
+                bot_text=formatted_result,
+                type_="erp"
+            )
         except Exception as e:
-            return {"error": str(e)}
-
+            save_logs(
+                user_question=user_question,
+                formatted_q=formatted_q,
+                context=context,
+                sql=sql,
+                val=val,
+                err=str(e),
+                result=sql_result,
+                formatted_result=formatted_result,
+                tables=selected_tables,
+                fields=fields,
+                entity_debug=entity_debug,
+                type_="ERP"
+            )
+            return {"ok": False, "error": str(e)}
+    save_logs(
+                user_question=user_question,
+                formatted_q=formatted_q,
+                context=context,
+                sql=sql,
+                val=val,
+                err=err if err else "",
+                result=sql_result,
+                formatted_result=formatted_result,
+                tables=selected_tables,
+                fields=fields,
+                entity_debug=entity_debug,
+                type_="ERP"
+            )
     return {
-        "Model returned SQL":org_sql,
-        "context":context,
-        "entity_words":entity_words,
-        # "Memory Status":memory_status,
+        "Model returned SQL": org_sql,
+        "context": context,
+        "entity_words": entity_words,
         "Question": user_question,
-        "Formated Question":formatted_q,
+        "Formated Question": formatted_q,
         "Cleaned SQL": sql,
         "ORM": orm,
         "Tables": selected_tables,
@@ -2714,10 +3096,11 @@ def _handle_sql_result(memory_status: Dict, sql_prompt: str, final: SQLState, sq
         "Entity Values present ?": contains_values,
         "Validation": val,
         "Error": err,
-        "result":sql_result,
+        "result": sql_result,
         "EntityDebug": entity_debug if entity_debug.get("contains_values") else None,
         "Bot": formatted_result,
     }
+
 def retry_sql(sql, error, formatted_q, sql_prompt):
     retry_prompt = SQL_SYS_PROMPT + """
 
@@ -2816,77 +3199,43 @@ def is_thread_erp(q:str,chat_id:str):
     else:
         return False
 
+from rapidfuzz import fuzz
+@frappe.whitelist()
+def find_similar_log_question(new_question, threshold=90):
+    logs = frappe.get_all(
+        "ChangAI Logs",
+        fields=["name", "user_question", "sql_generated","rewritten_question","fields","tables","error","entity","result"],
+        limit_page_length=500
+    )
 
+    best_match = None
+    best_score = 0
+    for log in logs:
+        score = fuzz.token_set_ratio(new_question, log.rewritten_question)
 
-@frappe.whitelist(allow_guest=False)
-def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sendNonErptoAI: bool = False) -> Dict:
-    memory_status = check_memory_status()
-    final, err_response = _invoke_pipeline(user_question, chat_id, request_id, sendNonErptoAI)
-    if err_response:
-        return err_response
+        if score > best_score:
+            best_score = score
+            best_match = log
 
-    entity_debug = {
-        "contains_values": final.get("contains_values"),
-        "entity_cards": final.get("entity_cards") or [],
+    if best_score >= threshold:
+        return {
+            "matched": True,
+            "score": best_score,
+            "log_name": best_match.name,
+            "question": best_match.user_question,
+            "sql": best_match.sql_generated,
+            "rewritten_question":best_match.rewritten_question,
+            "fields":best_match.fields,
+            "tables":best_match.tables,
+            "entity_debug":best_match.entity,
+            "result":best_match.result,
+            "error":best_match.error
+        }
+
+    return {
+        "matched": False,
+        "score": best_score
     }
-
-    if (final.get("query_type") or "NON_ERP") == "NON_ERP":
-        return _handle_non_erp(final, user_question, chat_id)
-
-    sql = clean_sql(final.get("sql")) or ""
-    orm = clean_sql(final.get("orm") or "")
-    formatted_q = _safe_strip(final.get("formatted_q") or "")
-    selected_tables = final.get("selected_tables") or []
-    fields = _safe_strip(final.get("selected_fields") or "")
-    sql_prompt = _safe_strip(final.get("sql_prompt") or "")
-    final_prompt = final.get("final_prompt") or ""
-    entity_words=final.get("entity_words") or []
-    try:
-        context = final.get("context")
-    except Exception as e:
-        frappe.log_error(e, "Error occurred while fetching final values")
-    err = final.get("error")
-
-    # # # guard empty sql
-    # # # if not sql:
-    # # #     return _error_response(memory_status, user_question, formatted_q, context,
-    # # #                            selected_tables, fields, sql, 
-    # # #                            {"ok": False, "error": "SQL is empty"},
-    # # #                            entity_debug, 0, "SQL not valid or missing", err)
-    # retried_sql1, retried_orm1, retry1_val_res = retry_sql(retried_sql, retry_val_res.get("error"), formatted_q, sql_prompt)
-    # if retry1_val_res.get("ok"):
-    #     return _handle_sql_result(memory_status, sql_prompt, final, retried_sql1, retried_orm1,
-    #                               formatted_q, fields, selected_tables, retry1_val_res,
-    #                               entity_debug, user_question, chat_id)
-    res = validate_sql_schema(sql)
-    publish_pipeline_update(request_id, "sql_validated", _("SQL validation Completed"))
-
-    # valid on first try
-    if res.get("ok") and sql.upper().startswith("SELECT"):
-        return _handle_sql_result(memory_status, sql_prompt, final, sql, orm,
-                                  formatted_q, fields, selected_tables, res,
-                                  entity_debug, user_question, chat_id)
-
-    # retry 2
-    retried_sql2, retried_orm2, retry2_val_res = retry_sql(sql, res.get("error"), formatted_q, sql_prompt)
-    if retry2_val_res.get("ok"):
-        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql2, retried_orm2,
-                                  formatted_q, fields, selected_tables, retry2_val_res,
-                                  entity_debug, user_question, chat_id)
-
-    # retry 3
-    retried_sql3, retried_orm3, retry3_val_res = retry_sql(retried_sql2, retry2_val_res.get("error"), formatted_q, sql_prompt)
-    if retry3_val_res.get("ok"):
-        return _handle_sql_result(memory_status, sql_prompt, final, retried_sql3, retried_orm3,
-                                  formatted_q, fields, selected_tables, retry3_val_res,
-                                  entity_debug, user_question, chat_id)
-
-    # all retries failed
-    final_error = retry2_val_res.get("error") or retry1_val_res.get("error") or retry3_val_res.get("error") or res.get("error") or "SQL not valid or missing"
-    return _error_response(memory_status, user_question, formatted_q, context,
-                           selected_tables, fields, retried_sql2 or sql,
-                           retry2_val_res, entity_debug, 2, final_error, err)
-
 
 def _error_response(memory_status, user_question, formatted_q, context,
                     selected_tables, fields, sql, validation,
@@ -2937,7 +3286,7 @@ def load_on_startup():
     try:
         load_non_erp_data()
         get_embedding_engine()
-        get_table_vs()
+        get_vs()
         load_field_matrix()
         gemini_client()
         get_master_vs()
@@ -3045,3 +3394,389 @@ def non_erp_response(non_erp_q: str) -> Optional[str]:
         return {"data":"Hey Iam ChangAI from ERPGulf,iam here to help you with your queries..."}
     matched_q = result[0]
     return {"data": response_map.get(matched_q, "Hey Iam ChangAI from ERPGulf,iam here to help you with your queries...")}
+
+
+@frappe.whitelist(allow_guest=False)
+def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sendNonErptoAI: bool = False) -> Dict:
+    memory_status = check_memory_status()
+    logs = find_similar_log_question(user_question)
+    if logs.get("matched") and logs["error"] == "" and logs.get("type") != "NonERP":
+        publish_pipeline_update(request_id, "cache_hit", "Using cached result")
+        # return True,logs
+        # if logs.get("rewritten_question") == "Not formatted as its NONERP":
+            # return _handle_non_erp_(logs.get("result"),logs.get("rewritten_question"),logs.get("error"), user_question, chat_id)
+        formatted_q = logs.get("rewritten_question")
+        sql = logs.get("sql")
+        tables = json.loads(logs.get("tables") or "[]")
+        fields =logs.get("fields") or ""
+        entity_debug = json.loads(logs.get("entity_debug") or "{}")
+        return _handle_sql_result(
+    memory_status,
+    request_id,
+    None,
+    {},
+    sql,
+    None,
+    formatted_q,
+    fields,
+    tables,
+    {"ok": True, "from_cache": True},
+    entity_debug,
+    user_question,
+    chat_id
+)
+    else:
+        final, err_response = _invoke_pipeline(user_question, chat_id, request_id, sendNonErptoAI)
+        if err_response:
+            return err_response
+
+        entity_debug = {
+            "contains_values": final.get("contains_values"),
+            "entity_cards": final.get("entity_cards") or [],
+        }
+
+        if (final.get("query_type") or "NON_ERP") == "NON_ERP":     
+            non_erp_res = _safe_strip(final.get("non_erp_res", ""))
+            formatted_q = _safe_strip(final.get("formatted_q", ""))
+            err = final.get("error")
+            return _handle_non_erp_(non_erp_res,formatted_q,err, user_question,request_id, chat_id)
+
+        sql = clean_sql(final.get("sql")) or ""
+        orm = clean_sql(final.get("orm") or "")
+        formatted_q = _safe_strip(final.get("formatted_q") or "")
+        if final.get("create_entity") is True:
+            return {
+                "create_entity":True,
+                "doc": final.get("doc"),
+                "entity_name": final.get("entity_name")
+            }
+        if final.get("open_report") is True:
+            return {
+                "open_report": True,
+                "report_name": final.get("report_name"),
+                "filters": final["filters"],
+                "reports_filter_before_call": final.get("reports_filter_before_call"),
+                "entity_raw": final.get("entity_raw"),
+                "question_rewritten": formatted_q
+            }
+        if final.get("stop_followup"):
+            save_turn_2(session_id=chat_id, user_text=user_question, bot_text=final.get("message"),type_="non_erp")
+            save_logs(
+                user_question=user_question,
+                formatted_q=None,
+                context=None,
+                sql=None,
+                val=None,
+                err=err if err else "",
+                result=None,
+                formatted_result=final.get("message"),
+                tables=None,
+                fields=None,
+                entity_debug=None,
+                type="NonERP"
+            )
+            publish_pipeline_update(
+    request_id,
+    "Stop follow-up detected",
+    "Stop follow-up detected",
+    data={"message": final.get("message")},
+    done=True
+)
+            return {
+        "Model returned SQL": None,
+        "context": None,
+        "entity_words": None,
+        "Question": user_question,
+        "Formated Question": formatted_q,
+        "Cleaned SQL": None,
+        "stop_followup": True,
+        "ORM": None,
+        "Tables": None,
+        "Fields": None,
+        "Entity Values present ?": None,
+        "Validation": None,
+        "Error": err,
+        "result": fNone,
+        "EntityDebug": None,
+        "Bot": final.get("message"),
+    }
+        selected_tables = final.get("selected_tables") or []
+        fields = _safe_strip(final.get("selected_fields") or "")
+        sql_prompt = _safe_strip(final.get("sql_prompt") or "")
+        final_prompt = final.get("final_prompt") or ""
+        entity_words=final.get("entity_words") or []
+        try:
+            context = final.get("context")
+        except Exception as e:
+            frappe.log_error(e, "Error occurred while fetching final values")
+        err = final.get("error")
+
+        # # # guard empty sql
+        # # # if not sql:
+        # # #     return _error_response(memory_status, user_question, formatted_q, context,
+        # # #                            selected_tables, fields, sql, 
+        # # #                            {"ok": False, "error": "SQL is empty"},
+        # # #                            entity_debug, 0, "SQL not valid or missing", err)
+        # retried_sql1, retried_orm1, retry1_val_res = retry_sql(retried_sql, retry_val_res.get("error"), formatted_q, sql_prompt)
+        # if retry1_val_res.get("ok"):
+        #     return _handle_sql_result(memory_status,request_id, sql_prompt, final, retried_sql1, retried_orm1,
+        #                               formatted_q, fields, selected_tables, retry1_val_res,
+        #                               entity_debug, user_question, chat_id)
+        res = validate_sql_schema(sql)
+        publish_pipeline_update(request_id, "sql_validated", _("SQL validation Completed"))
+
+        # valid on first try
+        if res.get("ok") and sql.upper().startswith("SELECT"):
+            return _handle_sql_result(memory_status,request_id, sql_prompt, final, sql, orm,
+                                    formatted_q, fields, selected_tables, res,
+                                    entity_debug, user_question, chat_id)
+
+        # retry 2
+        retried_sql2, retried_orm2, retry2_val_res = retry_sql(sql, res.get("error"), formatted_q, sql_prompt)
+        if retry2_val_res.get("ok"):
+            return _handle_sql_result(memory_status,request_id, sql_prompt, final, retried_sql2, retried_orm2,
+                                    formatted_q, fields, selected_tables, retry2_val_res,
+                                    entity_debug, user_question, chat_id)
+
+        # retry 3
+        retried_sql3, retried_orm3, retry3_val_res = retry_sql(retried_sql2, retry2_val_res.get("error"), formatted_q, sql_prompt)
+        if retry3_val_res.get("ok"):
+            return _handle_sql_result(memory_status,request_id, sql_prompt, final, retried_sql3, retried_orm3,
+                                    formatted_q, fields, selected_tables, retry3_val_res,
+                                    entity_debug, user_question, chat_id)
+
+        # all retries failed
+        final_error = retry2_val_res.get("error")  or retry3_val_res.get("error") or res.get("error") or "SQL not valid or missing"
+        return _error_response(memory_status, user_question, formatted_q, context,
+                            selected_tables, fields, retried_sql2 or sql,
+                            retry2_val_res, entity_debug, 2, final_error, err)
+
+from frappe.desk.query_report import get_script
+def get_report_filter_fields(report_name: str):
+    try:
+        script = get_script(report_name).get("script") or ""
+    except Exception:
+        return []
+
+    fieldnames = re.findall(
+        r'fieldname\s*:\s*["\']([^"\']+)["\']',
+        script
+    )
+
+    return "|".join(dict.fromkeys(fieldnames))
+
+@frappe.whitelist(allow_guest=False)
+def create_entity_dup(request_id,q):
+    res = call_fvs_table_search(True, q, request_id)
+    prompt = f"""You are selecting the correct ERPNext DocType for entity creation.
+User query:
+{q}
+Candidate DocTypes:
+{res[:10]}
+Rules:
+- Choose only one DocType from the candidate list.
+- Use only the given candidate DocTypes.
+- Do not add the "tab" prefix.
+- Return only valid JSON.
+- Do not return explanations or extra text.
+- If no suitable DocType is found, return {{"doctype": ""}}.
+Output format:
+{{"doctype": "chosen_doctype_name"}}
+
+    """
+    res = call_gemini(prompt,"")
+    if isinstance(res, str):
+        res = res.replace("```json", "").replace("```", "").strip()
+        result = json.loads(res)
+        doctype = result.get("doctype", "")
+        publish_pipeline_update(
+    request_id,
+    "completed doctype and entity detection",
+    "completed doctype and entity detection",
+    data={"doctype": doctype},
+    done=True
+)
+    return doctype
+    # return {
+    #     "doc":res.get("doctype") if isinstance(res, dict) else None
+    # }
+
+@frappe.whitelist(allow_guest=False)
+def rewrite_question_dup(
+    user_qstn: str,
+    session_id: str = None,
+    request_id: str = None
+):
+    entity_words = []
+    message=None
+    stop_followup=False
+    report_name_new = None
+    sys_prompt = SQL_REWRITE_SYS_PROMPT
+    prompt = inject_prompt(user_qstn, session_id)
+
+    try:
+        raw = call_model(prompt, "llm", sys_prompt)
+        standalone, contains_values, entity_words, create_entity, doc, entity_name, report_name, open_report,report_intent,stop_followup,message = (
+            _parse_rewrite_response(raw, user_qstn)
+        )
+
+        if report_intent:
+            report_name_new = match_report_intent(report_intent)
+
+        if request_id:
+            publish_pipeline_update(
+                request_id,
+                "question_rewrite_done",
+                "Question rewritten",
+                data={"formatted_q": standalone}
+            )
+
+        return {
+            "report_name": report_name_new if report_name_new else report_name,
+            "open_report": open_report,
+            "create_entity": create_entity,
+            "entity_name": entity_name if create_entity else None,
+            "doc": doc if create_entity else None,
+            "formatted_q": standalone,
+            "contains_values": contains_values,
+            "entity_words": entity_words,
+            "formatting_prompt": prompt,
+            "report_intent":report_intent,
+            "error": None,
+            "message":message if stop_followup else None
+        }
+
+    except frappe.exceptions.ValidationError:
+        raise
+
+    except Exception as e:
+        if request_id:
+            publish_pipeline_update(
+                request_id,
+                "failed",
+                str(e),
+                error=True,
+                done=True
+            )
+
+        return {"error": str(e)}
+    
+@frappe.whitelist()
+def guardrail_router_dup(
+    raw_q: str,
+    chat_id: str = None,
+    request_id: str = None
+):
+    try:
+        is_erp = is_erp_query(False, raw_q, BUSINESS_KEYWORDS, 80)
+
+        if is_erp:
+            query_type = "ERP"
+        elif chat_id and is_thread_erp(raw_q, chat_id):
+            query_type = "ERP"
+        else:
+            query_type = "NON_ERP"
+
+    except Exception as e:
+        query_type = "NON_ERP"
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Guardrail Router Error"
+        )
+
+        return {
+            "query_type": query_type,
+            "error": f"Error in guardrail router: {str(e)}"
+        }
+
+    if request_id:
+        publish_pipeline_update(
+            request_id,
+            "question_classify_done",
+            f"Query classified as {query_type}",
+            data={"query_type": query_type}
+        )
+
+    return {
+        "query_type": query_type,
+        "error": None
+    }
+
+@frappe.whitelist(allow_guest=True)
+def call_entity_retriever_dup(
+    isreport: bool,
+    qstn: str,
+    entity_words: list
+) -> Dict[str, Any]:
+
+    from changai.changai.api.v2.schema_utils import phonetic_match
+
+    cards = []
+    debug = []
+    doc = None
+
+    if not entity_words:
+        return {
+            "cards": [],
+            "doc": None
+        }
+
+    for word in entity_words:
+        result = phonetic_match(isreport, word)
+        labels = result.get("entity_labels") or []
+
+        debug.append({
+            "word": word,
+            "result": result,
+            "labels": labels
+        })
+
+        for label in labels:
+            if isreport:
+                try:
+                    table_field, _ = label.split(":", 1)
+                    table, field = table_field.split(".", 1)
+                    doc = table.removeprefix("tab")
+                except Exception:
+                    pass
+
+            if label and label not in cards:
+                cards.append(label)
+
+    return {
+        "cards": cards,
+        "doc": doc,
+        "debug": debug
+    }
+
+
+@frappe.whitelist(allow_guest=False)
+def run_text2sql_pipeline_dup(user_question: str, chat_id: str, request_id: str, sendNonErptoAI: bool = False) -> Dict:
+    memory_status = check_memory_status()
+    logs = find_similar_log_question(user_question)
+    return logs
+    if logs.get("matched") and logs["error"] == "None" and logs.get("rewritten_question") != "Not formatted as its NONERP":
+        return {
+            "message": "Hello Hi"
+        }
+    return{"message":"No Match"}
+    # if logs.get("matched") and not logs.get("error"):
+    #     return True,logs
+
+@frappe.whitelist(allow_guest=True)
+def match_report_intent(report_intent: str):
+    choices = list(REPORT_INTENT_MAP.keys())
+    match = process.extractOne(
+        report_intent.lower(),
+        choices,
+        scorer=fuzz.WRatio,
+        score_cutoff=75
+    )
+    if not match:
+        return ""
+
+    matched_intent = match[0]
+    return REPORT_INTENT_MAP[matched_intent]
+
+

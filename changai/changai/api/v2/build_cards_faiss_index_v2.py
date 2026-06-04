@@ -31,11 +31,12 @@ def _get_fvs_paths() -> tuple:
     schema_path = os.path.join(app_base, "schema_fvs")
     schema_emb_path = os.path.join(app_base, "emb_dir")
     master_path = os.path.join(private_base, "masterdata_fvs")
+    report_path = os.path.join(app_base, "report_fvs")
 
-    for p in (app_base, private_base, table_path, schema_path, master_path):
+    for p in (app_base, private_base, table_path, schema_path, master_path, report_path):
         os.makedirs(p, exist_ok=True)
 
-    return app_base, private_base, table_path, schema_path, master_path,schema_emb_path
+    return app_base, private_base, table_path, schema_path, master_path, schema_emb_path, report_path
 
 RAG_FOLDER = "Home/RAG Sources"
 HNSW_M           = 32
@@ -116,6 +117,26 @@ def _assert_dir_inside_base(dir_path: str, base_dir: str) -> Path:
         raise ValueError(f"Unsafe output dir (outside base): {d}")
     return d
 
+def build_report_docs(report_list: List[Dict[str, Any]]) -> List[Document]:
+    """
+    Build one Document per report name from reports.json.
+    reports.json is a flat list: ["Sales Invoice", "Purchase Order", ...]
+    """
+    docs = []
+    for report in report_list:
+        report_name = report.get("report_name")
+        ref_doctype = report.get("ref_doctype")
+        if not isinstance(report_name, str) or not report_name.strip():
+            continue
+        docs.append(Document(
+            page_content=f"{report_name}",
+            metadata={
+                "type": "report",
+                "report_name": report_name,
+                "ref_doctype": ref_doctype,
+            }
+        ))
+    return docs
 
 def build_table_docs(table_list: List[str]) -> List[Document]:
     """
@@ -361,13 +382,20 @@ def build_all_fvs() -> Dict[str, Any]:
         "message": "All 3 FVS build jobs have been queued. Check Error Logs for progress.",
     }
 
-
+@frappe.whitelist(allow_guest=False)
 def build_table_fvs_job():
     try:
-        app_base, _, table_path, _, _,_ = _get_fvs_paths()
+        app_base, _, table_path, _, _,_, report_path = _get_fvs_paths()
         tables_list = _load_json_from_file_doc("tables.json")
+        reports_list = _load_json_from_file_doc("reports.json")
         table_docs = build_table_docs(tables_list)
+        try:
+            report_docs = build_report_docs(reports_list)
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Build Report FVS Failed")
+            raise
         _build_and_save_faiss(table_docs, table_path, "ERPNext Table FVS", app_base)
+        _build_and_save_faiss(report_docs, report_path, "ERPNext Report FVS", app_base)
         frappe.logger().info(f"ERPNext Table FVS built: {len(table_docs)} docs")
     except Exception :
         frappe.log_error(frappe.get_traceback(), "Build Table FVS Failed")
@@ -412,7 +440,7 @@ def build_schema_fvs_job():
         schema = _load_yaml_from_file_doc("schema.yaml")
         # schema = clean_schema(schema,schema_path)
         schema_docs = build_schema_docs(schema)
-        app_base, _, _, schema_path, _,schema_emb_dir = _get_fvs_paths()
+        app_base, _, _, schema_path, _,schema_emb_dir, _ = _get_fvs_paths()
         # clean_schema(schema_path,schema_path)
         _build_and_save_faiss(schema_docs, schema_path, "ERPNext Schema FVS", app_base)
         save_field_matrix(schema_docs, schema_emb_dir)
@@ -424,7 +452,7 @@ def build_schema_fvs_job():
 
 def build_master_data_fvs_job():
     try:
-        _, private_base, _, _, master_path,_ = _get_fvs_paths()
+        _, private_base, _, _, master_path,_, _ = _get_fvs_paths()
         master_data = _load_yaml_from_file_doc("master_data.yaml")
         entity_docs = build_entity_docs(master_data)
         _build_and_save_faiss(entity_docs, master_path, "ERPNext Master Data FVS", private_base)

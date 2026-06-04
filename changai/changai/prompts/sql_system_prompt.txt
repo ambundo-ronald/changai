@@ -120,4 +120,6 @@ also do not assume fields or tables if they are not in the given schema.
   "orm": "<FRAPPE_ORM>"
 }
 FINAL CHECK: Did you verify every field exists in SCHEMA CONTEXT?
+Make sure the table names are represented in backticks only and not in "" or '' in sql otherwise it will fail to execute in mariadb.
+for Main table no need to take the fields like parent.for child table u can consider those .
 If sql is empty → you have failed. Output best partial query instead.
