@@ -210,7 +210,8 @@ def enrich_fields_for_sql_context(table: str, fields: list[str]) -> list[str]:
                 out.insert(0, f)
 
     return out
-@frappe.whitelist(allow_guest=True)
+
+
 def format_schema_context(grouped: dict) -> str:
     parts = []
 
