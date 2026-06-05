@@ -10,4 +10,4 @@ GENERIC FIELDS (available on ALL transaction doctypes):
 name, creation, modified, owner, company, docstatus, naming_series, amended_from.
 GENERIC FIELDS (available on ALL master doctypes):
 name, creation, modified, owner, disabled, naming_series
-REMINDER: Use only fields from SCHEMA CONTEXT.and never ever use a field or a table that is not in the given schema.
+REMINDER: Use only fields from SCHEMA CONTEXT.and never ever use any field or any table that is not in the given schema.that is important.beware of using non existing fields.
