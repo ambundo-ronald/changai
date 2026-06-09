@@ -170,7 +170,7 @@ frappe.ui.form.on("ChangAI Settings", {
         applyTooltips(frm, fieldsWithTooltips);
         frm.add_custom_button(__('Download Embedding Model'), () => {
             frappe.call({
-                method: "changai.changai.api.v2.text2sql_pipeline_v2.download_model",
+                method: "changai.changai.api.v2.retrieve.download_model",
                 freeze: true,
                 freeze_message: "Downloading Model...",
                 callback(r) {

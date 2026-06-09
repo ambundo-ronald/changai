@@ -8,7 +8,7 @@ import frappe
 from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
-from changai.changai.api.v2.text2sql_pipeline_v2 import get_embedding_engine
+from changai.changai.api.v2.retrieve import get_embedding_engine
 import os
 import pickle
 

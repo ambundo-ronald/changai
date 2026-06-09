@@ -11,9 +11,8 @@ import base64
 from base64 import b64encode
 import io
 import os
-
-
-def create_qr_code(doc):
+@frappe.whitelist()
+def create_qr_code(doc,method):
     """Create QR Code after inserting Employee"""
     if not hasattr(doc, 'custom_qr_code'):
     	return

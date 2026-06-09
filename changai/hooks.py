@@ -170,21 +170,21 @@ app_include_css = [
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# "Employee": {
-#         "on_update": "changai.changai.api.v2.create_qr.create_qr_code",
+doc_events = {
+"Employee": {
+        "on_update": "changai.changai.api.v2.create_qr.create_qr_code",
 
-#     },
+    }
 # # 	"*": {
 # # 		"on_update": "method",
 # # 		"on_cancel": "method",
 # # 		"on_trash": "method"
 # # 	}
-# }
+}
 
 # also runs after bench migrate
 on_session_creation = [
-    "changai.changai.api.v2.text2sql_pipeline_v2.load_on_startup",
+    "changai.changai.api.v2.retrieve.load_on_startup",
     "changai.changai.api.v2.schema_utils.reload_mapping_schema_cache"
 ]
 

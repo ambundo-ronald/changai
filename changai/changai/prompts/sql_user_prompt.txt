@@ -6,8 +6,10 @@ field_name:field_value
 When generating SQL for entity retrieval, you MUST use the exact field name and exact field value provided in the ENTITY_CARDS context for WHERE conditions.
 Do not use the raw user text or replace the field name with another field like `name`.
 SCHEMA CONTEXT: {context}
-GENERIC FIELDS (available on ALL transaction doctypes):
+GENERIC FIELDS are only available if the table type is correctly identified.
+Transaction doctypes may have:
 name, creation, modified, owner, company, docstatus, naming_series, amended_from.
-GENERIC FIELDS (available on ALL master doctypes):
-name, creation, modified, owner, disabled, naming_series
+Master/setup doctypes may have:
+name, creation, modified, owner, disabled, naming_series.
+Never transfer generic fields from transaction doctypes to master/setup doctypes.
 REMINDER: Use only fields from SCHEMA CONTEXT.and never ever use any field or any table that is not in the given schema.that is important.beware of using non existing fields.

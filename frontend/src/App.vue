@@ -99,6 +99,10 @@ function togglePollyPreference() {
 
 function sendNonErpToAI() {
   sendNonERPtoaiEnabled.value = !sendNonERPtoaiEnabled.value
+  localStorage.setItem(
+    'sendNonERPtoaiEnabled',
+    sendNonERPtoaiEnabled.value
+  )
 }
 async function handleSubmit(message) {
   if (activeTab.value === 'support') {
@@ -126,7 +130,9 @@ async function handleChatSubmit(message) {
   let cancelled = false
   const chatId = getOrCreateChatId()
   const requestId = `${chatId}_${Date.now()}`
-  const sendNonErptoAI = sendNonERPtoaiEnabled.value
+  const sendNonERPtoaiEnabled = ref(
+  localStorage.getItem('sendNonERPtoaiEnabled') === 'true'
+  )
   console.log('sendNonErptoAI value being sent:', sendNonErptoAI, typeof sendNonErptoAI)
   const eventName = `debug_${requestId}`
   frappe.realtime.on(eventName, onPipelineUpdate)

@@ -1,8 +1,49 @@
 import json
 import frappe
-from typing import Any
+from typing import Any, Optional, Dict
+from rapidfuzz import fuzz
 CHANGAI_CHAT_HIST_DOC = "ChangAI Chat History"
- 
+
+def save_logs(
+    user_question: Optional[str] = None,
+    formatted_q: Optional[str] = None,
+    context: Optional[str] = None,
+    sql: Optional[str] = None,
+    val: Any = None,
+    result: Any = None,
+    tries: Optional[int] = None,
+    err: Any = None,
+    formatted_result: Any = None,
+    tables:Any=None,
+    fields:Any=None,
+    entity_debug:Any=None,
+    type_=None
+) -> str:
+    def to_json_if_needed(v: Any) -> Any:
+        if isinstance(v, (dict, list)):
+            return json.dumps(v, default=str, ensure_ascii=False)
+        return v
+    
+    MAX_LOG_LEN = 140
+    doc = frappe.new_doc("ChangAI Logs")
+    doc.user_question = user_question
+    safe_question=(formatted_q[:137] + "..." if len(formatted_q) > MAX_LOG_LEN else formatted_q)
+    doc.rewritten_question = safe_question
+    doc.schema_retrieved = to_json_if_needed(context)
+    doc.sql_generated = to_json_if_needed(sql)
+    doc.validation = to_json_if_needed(val)
+    doc.tries = tries
+    doc.error = to_json_if_needed(err)
+    doc.result = to_json_if_needed(result)
+    doc.formatted_result = to_json_if_needed(formatted_result)
+    doc.tables = to_json_if_needed(tables)
+    doc.fields = to_json_if_needed(fields)
+    doc.entity = to_json_if_needed(entity_debug)
+    doc.type = type_
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
 def save_message_doc(session_id:str,message_type:str,content:str):
 
     doc=frappe.get_doc({
@@ -153,6 +194,101 @@ USER_PROMPT = """Chat History:
 
 User Question:
 {qstn}"""
+
+def find_similar_log_question(new_question:str, threshold: int = 90):
+    logs = frappe.get_all(
+        "ChangAI Logs",
+        fields=["name", "user_question", "sql_generated","rewritten_question","fields","tables","error","entity","result","type"],
+        limit_page_length=500
+    )
+    best_match = None
+    best_score = 0
+    for log in logs:
+        score = fuzz.token_set_ratio(new_question, log.rewritten_question)
+        if score > best_score:
+            best_score = score
+            best_match = log
+
+    if best_score >= threshold:
+        return {
+            "matched": True,
+            "score": best_score,
+            "log_name": best_match.name,
+            "question": best_match.user_question,
+            "sql": best_match.sql_generated,
+            "rewritten_question":best_match.rewritten_question,
+            "fields":best_match.fields,
+            "tables":best_match.tables,
+            "entity_debug":best_match.entity,
+            "result":best_match.result,
+            "error":best_match.error,
+            "type":best_match.type
+        }
+
+    return {
+        "matched": False,
+        "score": best_score
+    }
+
+def _error_response(memory_status, user_question, formatted_q, context,
+                    selected_tables, fields, sql, validation,
+                    entity_debug, tries, error, err):
+    return {
+        "Memory Status": memory_status,
+        "Question": user_question,
+        "Formatted_Question": formatted_q,
+        "Context": (context or "")[:800],
+        "Tables": selected_tables,
+        "Fields": fields,
+        "SQL": sql,
+        "Validation": validation,
+        "EntityDebug": entity_debug,
+        "Tries": tries,
+        "Error": error,
+        "Result": [],
+        "Bot": _get_sql_error_message(error, validation),
+    }
+
+def _get_sql_error_message(err: Any, val: Dict) -> str:
+    # if err:
+    #     frappe.log_error(err, "ChangAI SQL Pipeline Error")
+    #     return "⚠️ The model encountered an error generating your query. Please try the same Question again."
+
+    error_text = (val.get("error") or "").strip()
+
+    if not error_text:
+        return "⚠️ Could nprocess your request. Please try rephrasing."
+
+    if "Empty SQL from LLM" in error_text:
+        return "⚠️ The model could not generate a SQL query for your question. Please try rephrasing."
+
+    if "does not exist in schema" in error_text:
+        return f"⚠️ The model generated an invalid table reference. {error_text}"
+
+    if "could not be resolved" in error_text:
+        return f"⚠️ The model generated an invalid field reference. {error_text}"
+
+    if "parse" in error_text.lower() or "syntax" in error_text.lower() or "expected" in error_text.lower():
+        return "⚠️ The model generated invalid SQL syntax. Please try rephrasing."
+
+    return f"⚠️ The model generated an invalid query. {error_text}"
+
+def get_last_thread_message(chat_id: str):
+    data = frappe.get_all(
+        "ChangAI Chat History",
+        filters={"session_id": chat_id},
+        fields=["content"],
+        order_by="creation asc"
+    )
+    for row in reversed(data):
+        try:
+            msg = json.loads(row["content"])
+            # human_msg = msg[-2]["human"]
+            msg_type = msg[-2]["type"]
+            return msg_type
+        except Exception:
+            pass
+    return ""
 @frappe.whitelist(allow_guest=False)
 def inject_prompt(user_qstn: str, session_id: str) -> str:
     rows=get_chat_history(session_id)

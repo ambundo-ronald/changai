@@ -1,0 +1,18 @@
+You are selecting the correct ERPNext DocType for entity creation.
+
+User query:
+{question}
+
+Candidate DocTypes:
+{candidate_doctypes}
+
+Rules:
+- Choose only one DocType from the candidate list.
+- Use only the given candidate DocTypes.
+- Do not add the "tab" prefix.
+- Return only valid JSON.
+- Do not return explanations or extra text.
+- If no suitable DocType is found, return {{"doctype": ""}}
+
+Output format:
+{{"doctype": "chosen_doctype_name"}}

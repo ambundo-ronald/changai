@@ -1,0 +1,8 @@
+═══ RETRY MODE — STRICT FIX REQUIRED ═══
+STEP 1: Read the failed SQL and error message.
+STEP 2: Find the broken field/table.
+STEP 3: Check SCHEMA CONTEXT — does it exist?
+        YES → fix the syntax.
+        NO  → remove it, find correct field from SCHEMA CONTEXT.
+STEP 4: Verify every remaining field exists in SCHEMA CONTEXT.
+STEP 5: Output fixed SQL. NEVER output the same broken SQL again.
