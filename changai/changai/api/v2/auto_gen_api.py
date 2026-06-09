@@ -33,13 +33,10 @@ def ensure_file_folder(folder_path: str, is_private: int = 1) -> str:
     """
     if not folder_path:
         return "Home"
-
     parts = [p.strip() for p in folder_path.split("/") if p.strip()]
     if not parts:
         return "Home"
-
     current_path = parts[0]
-
     # Usually Home already exists, but keep this safe.
     if not frappe.db.exists("File", current_path):
         frappe.get_doc({
@@ -49,7 +46,6 @@ def ensure_file_folder(folder_path: str, is_private: int = 1) -> str:
             "folder": "",
             "is_private": is_private,
         }).insert(ignore_permissions=True)
-
     for part in parts[1:]:
         next_path = f"{current_path}/{part}"
         if not frappe.db.exists("File", next_path):
@@ -61,7 +57,6 @@ def ensure_file_folder(folder_path: str, is_private: int = 1) -> str:
                 "is_private": is_private,
             }).insert(ignore_permissions=True)
         current_path = next_path
-
     return current_path
 
 
@@ -121,22 +116,18 @@ def write_filedoctype(
     is_private: int = 1
 ):
     folder = ensure_file_folder(folder, is_private=is_private)
-
     if file_name.endswith(JSON_EXT):
         text = json.dumps(payload, ensure_ascii=False, indent=2)
     elif file_name.endswith((YAML_EXT, ".yml")):
         text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
     else:
         text = str(payload)
-
     content = text.encode("utf-8")
-
     existing = frappe.db.get_value(
         "File",
         {"file_name": file_name, "folder": folder},
         "name"
     )
-
     if existing:
         doc = frappe.get_doc("File", existing)
         frappe.logger().info(f"Overwriting {file_name} -> file_url={doc.file_url}")
@@ -144,7 +135,6 @@ def write_filedoctype(
         doc.save(ignore_permissions=True)
         doc.reload()
         return doc
-
     doc = frappe.get_doc({
         "doctype": "File",
         "file_name": file_name,
@@ -152,7 +142,6 @@ def write_filedoctype(
         "is_private": is_private,
         "content": content,
     }).insert(ignore_permissions=True)
-
     return doc
 def _tab(dt: str) -> str:
     dt = (dt or "").strip()
@@ -169,32 +158,24 @@ MODULES_TO_SYNC = ["Customer", "Item", "Currency", "Supplier"]
 def _normalize_master_data_payload(payload: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     if not isinstance(payload, dict):
         payload = {}
-
     meta = payload.get("_meta") or {}
     data = payload.get("data") or []
-
     if not isinstance(meta, dict):
         meta = {}
-
     if not isinstance(data, list):
         data = []
-
     return meta, data
 
 
 def _extract_existing_keys(data: List[Any]) -> Set[tuple]:
     keys: Set[tuple] = set()
-
     for row in data:
         if not isinstance(row, dict):
             continue
-
         dt = row.get("entity_type")
         eid = row.get("entity_id")
-
         if dt and eid:
             keys.add((dt, eid))
-
     return keys
 
 
@@ -233,20 +214,15 @@ def update_masterdata():
 def sync_master_data_smart() -> Dict[str, Any]:
     file_name = "master_data.yaml"
     payload = _read_filedoctype(file_name, RAG_FOLDER)
-
     meta, data = _normalize_master_data_payload(payload)
-
     added_total = 0
     removed_total = 0
     added_by_module: Dict[str, int] = {}
     removed_by_module: Dict[str, int] = {}
     fetched_by_module: Dict[str, int] = {}
-
     rebuilt_rows: List[Dict[str, Any]] = []
-
     for mod in MODULES_TO_SYNC:
         entity_type = f"tab{mod}"
-
         existing_rows = [
             row for row in data
             if isinstance(row, dict) and row.get("entity_type") == entity_type
@@ -263,18 +239,13 @@ def sync_master_data_smart() -> Dict[str, Any]:
             fields.append(title_field)
         live_records = frappe.get_all(mod, fields=fields,limit_page_length=0)
         live_ids = {rec.get("name") for rec in live_records if rec.get("name")}
-
         fetched_by_module[mod] = len(live_ids)
-
         added_ids = live_ids - existing_ids
         removed_ids = existing_ids - live_ids
-
         added_by_module[mod] = len(added_ids)
         removed_by_module[mod] = len(removed_ids)
-
         added_total += len(added_ids)
         removed_total += len(removed_ids)
-
         for rec in live_records:
             if mod == "Item":
                 item_code = rec.get("name")
@@ -297,9 +268,7 @@ def sync_master_data_smart() -> Dict[str, Any]:
             else:                    
                 entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
                 rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
-
     final_data = rebuilt_rows
-
     meta["last_sync"] = str(now_datetime())
     settings = frappe.get_single("ChangAI Settings")
     settings.last_masterdata_sync = meta["last_sync"]
@@ -325,13 +294,10 @@ def _clean_schema_fields(by_table: Dict[str, Dict[str, Any]]) -> None:
         for field in block.get("fields", []) or []:
             if not isinstance(field, dict):
                 continue
-
             if field.get("fieldtype") != "Select":
                 field.pop("options", None)
-
             if field.get("fieldtype") != "Link":
                 field.pop("join_hint", None)
-
 
 
 def get_doctypes_changed_since(last_sync: Optional[str]) -> List[str]:
@@ -348,9 +314,7 @@ def get_doctypes_changed_since(last_sync: Optional[str]) -> List[str]:
             filters["modified"] = [">=", since]  # catches updated tables
         except Exception:
             pass
-
     results = frappe.get_all("DocType", filters=filters, pluck="name")
-
     # Also catch newly created DocTypes since last sync
     if last_sync:
         try:
@@ -368,25 +332,20 @@ def get_doctypes_changed_since(last_sync: Optional[str]) -> List[str]:
             results = list(set(results) | set(new_doctypes))
         except Exception:
             pass
-
     return results
 TABLES_JSON = "tables.json"
 YML_EXTENSIONS = (".yaml", ".yml")
 REPORTS_JSON = "reports.json"
 
-
 def _normalize_schema_payload(payload: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     if not isinstance(payload, dict):
         return {}, []
-
     meta = payload.get("_meta") or {}
     tables_blocks = payload.get("tables") or []
-
     if not isinstance(meta, dict):
         meta = {}
     if not isinstance(tables_blocks, list):
         tables_blocks = []
-
     return meta, tables_blocks
 
 
@@ -415,16 +374,13 @@ def _get_tables_to_process(
 ) -> tuple[Set[str], Set[str], Set[str], List[str], List[str]]:
     changed_tables = {_tab(dt) for dt in changed_doctypes}
     existing_tables_set = set(existing_tables)
-
     missing_from_schema = {t for t in existing_tables if t not in by_table}
     new_from_changed = {
         t for t in changed_tables
         if t not in by_table and t not in existing_tables_set
     }
-
     tables_to_process = sorted(changed_tables | missing_from_schema | new_from_changed)
     merged_tables = sorted(existing_tables_set | changed_tables)
-
     return changed_tables, missing_from_schema, new_from_changed, tables_to_process, merged_tables
 
 
@@ -439,12 +395,10 @@ def _get_existing_fields_for_table(by_table: Dict[str, Dict[str, Any]], table: s
 
 def _merge_select_options(live_options_raw: str, existing_options: Any) -> List[str]:
     live_options = [opt.strip() for opt in live_options_raw.split("\n") if opt.strip()]
-
     if isinstance(existing_options, str):
         existing_options = [opt.strip() for opt in existing_options.split("\n") if opt.strip()]
     elif not isinstance(existing_options, list):
         existing_options = []
-
     return list(dict.fromkeys(live_options + existing_options))
 
 
@@ -454,33 +408,19 @@ def _build_fields_from_meta(
 ) -> List[Dict[str, Any]]:
     fields: List[Dict[str, Any]] = []
     added_fieldnames = set()
-
-    # # always add system fields first
-    # for sys_field in SYSTEM_FIELDS:
-    #     field_entry = _build_field_entry(sys_field, existing_fields, meta_dt.name)
-    #     if field_entry:
-    #         fields.append(field_entry)
-    #         added_fieldnames.add(field_entry["name"])
-
-    # then add real doctype fields
     for field_meta in meta_dt.fields:
         fieldname = (getattr(field_meta, "fieldname", None) or "").strip()
         fieldtype = (getattr(field_meta, "fieldtype", None) or "").strip()
-
         if not fieldname:
             continue
-
         if fieldname in added_fieldnames:
             continue
-
         if fieldtype in EXCLUDED_FIELDTYPES:
             continue
-
         field_entry = _build_field_entry(field_meta, existing_fields, meta_dt.name)
         if field_entry:
             fields.append(field_entry)
             added_fieldnames.add(field_entry["name"])
-
     return fields
 
 
@@ -493,7 +433,6 @@ def _update_or_create_table_block(
         by_table[table]["fields"] = fields
         by_table[table]["desc_done"] = not _has_pending_descriptions(fields)
         return
-
     by_table[table] = {
         "table": table,
         "description": "",
@@ -506,7 +445,6 @@ def _build_field_entry(
     existing_fields: Dict[str, Dict[str, Any]],
     source_doctype: str,
 ) -> Optional[Dict[str, Any]]:
-
     if isinstance(field_meta, dict):
         fieldname = field_meta.get("fieldname")
         fieldtype = field_meta.get("fieldtype", "Data")
@@ -517,38 +455,30 @@ def _build_field_entry(
         fieldtype = getattr(field_meta, "fieldtype", "Data")
         label = getattr(field_meta, "label", None) or fieldname
         options = getattr(field_meta, "options", None)
-
     if not fieldname:
         return None
-
     existing = existing_fields.get(fieldname) or {}
     description = existing.get("description") or ""
-
     entry = {
         "name": fieldname,
         "fieldtype": fieldtype,
         "label": label,
         "description": description,
     }
-
     if fieldtype == "Select" and options:
         entry["options"] = _merge_select_options(
             options,
             existing.get("options", []),
         )
-
     elif fieldtype == "Link" and options:
         entry["join_hint"] = {
             "table": f"tab{options}",
             "on": f"{fieldname} = tab{options}.name"
         }
-
     if fieldtype != "Select":
         entry.pop("options", None)
-
     if fieldtype != "Link":
         entry.pop("join_hint", None)
-
     return entry
 
 
@@ -576,7 +506,6 @@ def _write_schema_outputs(
         reports,
         folder=RAG_FOLDER,
     )
-
 
 
 def _has_pending_descriptions(fields: List[Dict[str, Any]]) -> bool:
@@ -911,24 +840,19 @@ def _process_pending_field_batches(
     updated_in_table = 0
     updated_fields = 0
     consecutive_errors = 0
-
     for i in range(0, len(pending_fields), batch_size):
         batch = pending_fields[i:i + batch_size]
         desc_map = _smart_desc_map(client, table, batch)
-
         if not desc_map:
             consecutive_errors += 1
             continue
-
         consecutive_errors = 0
-
         for field in batch:
             field_name = field.get("name")
             if field_name in desc_map:
                 field["description"] = desc_map[field_name].strip()
                 updated_fields += 1
                 updated_in_table += 1
-
         # Required checkpoint commit: this long-running schema enrichment job calls external APIs and must persist partial progress to avoid losing completed batch updates on failure/retry.
         frappe.db.commit()  # nosemgrep
     return {
@@ -950,10 +874,8 @@ def _process_table_for_missing_descriptions(
             "consecutive_errors": 0,
             "skipped": 1,
         }
-
     table = block.get("table")
     pending_fields = _get_pending_fields(block)
-
     if not pending_fields:
         block["desc_done"] = True
         return {
@@ -962,9 +884,7 @@ def _process_table_for_missing_descriptions(
             "consecutive_errors": 0,
             "skipped": 0,
         }
-
     block["desc_done"] = False
-
     try:
         result = _process_pending_field_batches(
             client=client,
@@ -980,7 +900,6 @@ def _process_table_for_missing_descriptions(
             "consecutive_errors": 1,
             "skipped": 0,
         }
-
     if result["updated_in_table"]:
         _mark_table_desc_done(block)
 
@@ -1037,7 +956,6 @@ Fields:
 {json.dumps(field_names, ensure_ascii=False)}
 """.strip()
 
-
 def _call_openai_desc_map_once(client, prompt: str):
     return client.chat.completions.create(
         model="gpt-4o-mini",
@@ -1050,33 +968,25 @@ def _call_openai_desc_map_once(client, prompt: str):
         timeout=180,
     )
 
-
 def _smart_desc_map_openai(client, table_name: str, fields: List[Dict[str, Any]]) -> Dict[str, str]:
     if not client:
         return {}
-
     field_names = _get_field_names(fields)
     if not field_names:
         return {}
-
     prompt = _build_desc_prompt(table_name, field_names)
-
     for attempt in range(3):
         try:
             response = _call_openai_desc_map_once(client, prompt)
             text = (response.choices[0].message.content or "").strip()
-
             parsed = _extract_json_object(text)
             normalized = _normalize_desc_map(parsed)
             if normalized:
                 return normalized
-
             frappe.logger().warning(
                 f"OpenAI returned non-JSON table={table_name} attempt={attempt+1} preview={text[:200]!r}"
             )
         except Exception as e:
             frappe.logger().error(f"OpenAI error table={table_name} attempt={attempt+1}: {e}")
-
         time.sleep(2 * (attempt + 1))
-
     return {}

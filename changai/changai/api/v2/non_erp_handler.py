@@ -7,10 +7,13 @@ import threading
 import pickle
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Any
+from changai.changai.api.v2.schema_utils import read_asset
 
 import frappe
 from rapidfuzz import process, fuzz
-
+_NON_ERP_DATA = None
+_NON_ERP_QUESTIONS = None
+_NON_ERP_RESPONSE_MAP = None
 
 @dataclass
 class ResponseEntry:
@@ -597,4 +600,42 @@ def handle_non_erp_query(user_input: str) -> dict:
             "matcher_seconds": round(matcher_seconds, 6),
             "total_seconds": round(total_seconds, 6),
         }
-    }
+}
+
+def non_erp_response(non_erp_q: str) -> Optional[str]:
+    questions, response_map = load_non_erp_data()
+    result = process.extractOne(
+        non_erp_q,
+        questions,
+        scorer=fuzz.WRatio,
+        score_cutoff=65
+    )
+    if not result:
+        return {"data":"Hey Iam ChangAI from ERPGulf,iam here to help you with your queries..."}
+    matched_q = result[0]
+    return {"data": response_map.get(matched_q, "Hey Iam ChangAI from ERPGulf,iam here to help you with your queries...")}
+
+
+def load_non_erp_data():
+    global _NON_ERP_DATA, _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP
+
+    if _NON_ERP_DATA is not None:
+        return _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP
+    try:
+        _NON_ERP_DATA = read_asset("non_erp_combined.processed.json")
+    except Exception as e:
+        frappe.log_error(f"Failed to load NON-ERP data: {e}", "ChangAI NON-ERP Data Load Error")
+        _NON_ERP_DATA = []
+
+    _NON_ERP_QUESTIONS = []
+    _NON_ERP_RESPONSE_MAP = {}
+
+    for item in _NON_ERP_DATA:
+        q = item.get("user_input")
+        if not q:
+            continue
+
+        _NON_ERP_QUESTIONS.append(q)
+        _NON_ERP_RESPONSE_MAP[q] = item.get("response")
+
+    return _NON_ERP_QUESTIONS, _NON_ERP_RESPONSE_MAP

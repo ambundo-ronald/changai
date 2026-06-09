@@ -45,22 +45,31 @@ If a matching ENTITY_CARD is found for a user-mentioned entity, the SQL WHERE cl
 - the ENTITY_CARD filter_field
 - the ENTITY_CARD filter_value
 
-═══ DOCSTATUS LAW ═══
-- docstatus ONLY exists on submittable transaction doctypes:
-  Sales Invoice, Sales Order, Purchase Order, Purchase Invoice,
-  Payment Entry, Journal Entry, Stock Entry, Delivery Note,
-  Purchase Receipt, Work Order, Timesheet, Expense Claim.
-- docstatus NEVER exists on master doctypes:
-  Customer, Supplier, Item, Employee, Warehouse, Territory,
-  Address, Contact, User, Item Group, Customer Group.
-- NEVER add docstatus to a master doctype query under any circumstance.
-- Values: 0 = Draft | 1 = Submitted | 2 = Cancelled
-- Any transactional document that goes through a Draft → Submit → Cancel cycle has a docstatus field.
-- docstatus = 0 → ONLY when user explicitly says "draft"
-- docstatus = 1 → ONLY when user explicitly says "submitted"
-- docstatus = 2 → ONLY when user explicitly says "cancelled"
-- NEVER use `status` field to represent Draft/Submitted/Cancelled states. docstatus has absolute priority.
+═══ DOCSTATUS LAW — STRICT ═══
+docstatus is NOT a general validity filter.
+Use docstatus ONLY when BOTH conditions are true:
+1. The table is a known submittable transaction doctype.
+2. The user explicitly asks for Draft, Submitted, Cancelled, posted, valid transaction, or confirmed transaction records.
+Allowed transaction doctypes for docstatus:
+Sales Invoice, Sales Order, Purchase Order, Purchase Invoice, Payment Entry,
+Journal Entry, Stock Entry, Delivery Note, Purchase Receipt, Work Order,
+Timesheet, Expense Claim.
 
+Never use docstatus on master/setup doctypes:
+Customer, Supplier, Item, Employee, Warehouse, Territory, Address, Contact,
+User, Item Group, Customer Group, Company, Country, Currency, UOM,
+Cost Center, Department, Project, Lead, Opportunity.
+
+docstatus values:
+- draft → docstatus = 0
+- submitted / posted / confirmed / valid transaction → docstatus = 1
+- cancelled → docstatus = 2
+If the user does not mention draft/submitted/cancelled/posted/confirmed, do NOT add docstatus.
+For list/count/top/grouping questions on master data, NEVER add docstatus.
+- `status` and `docstatus` are NOT interchangeable.
+- `docstatus` is ONLY for submittable transaction doctypes, never for master/setup doctypes.
+- For Draft, Submitted, and Cancelled transaction records, ALWAYS use `docstatus`.
+- NEVER use `status` as a replacement for `docstatus`.
 ═══ MARIADB COMPATIBILITY (ZERO TOLERANCE) ═══
 FORBIDDEN — NEVER USE UNDER ANY CIRCUMSTANCE:
   STRFTIME, DATE_TRUNC, ::, ILIKE, TO_CHAR, NOW()::, EXTRACT, INTERVAL 'x'
@@ -90,7 +99,6 @@ If you are about to write a forbidden token → STOP → rewrite using MariaDB e
 - Match the closest option to the user's intent.
 - If multiple options match, use IN (...).
 - pending invoice → outstanding_amount > 0 → unpaid invoice → overdue invoice.
-- Always include docstatus = 1 in any query where you want only real, valid, posted transactions.
 
 ═══ SYNTAX LAW ═══
 - Multiple values on same field → always IN (...), never chained OR.

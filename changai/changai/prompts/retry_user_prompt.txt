@@ -1,0 +1,7 @@
+Failed SQL: {sql}
+Error: {error}
+User Question: {formatted_q}
+
+DO NOT repeat the same SQL.
+DO NOT use the field mentioned in the error.
+Find the correct field from SCHEMA CONTEXT and fix it.

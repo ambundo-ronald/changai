@@ -2,9 +2,9 @@ const IS_DEV = import.meta.env.DEV
 
 export const API = {
   PIPELINE: 'changai.changai.api.v2.text2sql_pipeline_v2.run_text2sql_pipeline',
-  SUPPORT: 'changai.changai.api.v2.text2sql_pipeline_v2.support_bot',
-  SETTINGS: 'changai.changai.api.v2.text2sql_pipeline_v2.get_frontend_settings',
-  TTS: 'changai.changai.api.v2.text2sql_pipeline_v2.synthesize_tts',
+  SUPPORT: 'changai.changai.api.v2.helpdesk_api.support_bot',
+  SETTINGS: 'changai.changai.api.v2.schema_utils.get_frontend_settings',
+  TTS: 'changai.changai.api.v2.tts.synthesize_tts',
 }
 
 export function frappeCall(method, args = {}, mode = 'actual') {

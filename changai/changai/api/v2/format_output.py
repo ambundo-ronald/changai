@@ -1,6 +1,8 @@
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Set
 import frappe
+import json
+from changai.changai.api.v2.clients import call_model,gemini_client
 import sqlglot
 from sqlglot import exp
 
@@ -588,5 +590,65 @@ def local_format(sql: str, sample_rows: List[Dict[str, Any]]):
     row_count = len(sample_rows)
     result = format_sql_response(sql, row_count, sample_rows)
     return result
+
+def format_data_conversationally(user_data: Any) -> str:
+    # Safe: CONVERSATION_TEMPLATE is a hardcoded internal template string.
+    # User SQL result is passed only as data context, not as template source.
+    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
+    return render_template(
+        CONVERSATION_TEMPLATE,  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
+
+        {"data": user_data}
+    )
+
+def format_data(qstn: str, sql_data: Any) -> Dict[str, str]:
+    if isinstance(sql_data, (dict, list)):
+        db_result_json = json.dumps(sql_data, ensure_ascii=False, default=str)
+    else:
+        db_result_json = str(sql_data) if sql_data is not None else "{}"
+
+    sys_prompt = """
+You are ChangAI, a warm and intelligent business assistant.
+Your job is to turn raw database results into clear, friendly, human-readable answers.
+CONTENT RULES:
+- Use BOTH the user question and the DB result JSON to form the answer.
+- Use ONLY values present in the JSON. NEVER invent numbers or fields.
+- If result is empty, respond warmly and suggest refining the search.
+- Do NOT mention SQL, tables, fields, JSON, reasoning, or steps.
+
+TONE & STYLE:
+- Warm, conversational, and helpful — like a knowledgeable friend, not a report.
+- If the question is in Arabic, reply in natural Arabic — not translated English.
+- Never respond with a cold, empty, or robotic answer.
+
+FORMATTING:
+- Start with ONE relevant emoji matching the topic (📦💰🧾👥📊📅🔍💤📉)
+- For 3+ items, use a bullet list: • Item — value
+- If list exceeds shown items, state exactly how many remain.
+- Keep answers brief (1–6 lines). Lead with the direct answer, then light context.
+
+CLOSING:
+- End with ONE short, relevant follow-up question to keep the conversation going.
+- Make it feel natural, not robotic.
+Never list names or items in a comma-separated line. Ever.
+OUTPUT:
+- Markdown ALLOWED: **bold**, • bullets, emojis
+- i dont want too much gap between the texts also gaps are not allowed between items listed.
+- No JSON. No code blocks. No labels. No explanations.
+- Output ONLY the final user-facing answer. Nothing else.
+- if the user question is in english reply in english only very important.
+if the user question is in arabic respond in arabic only. and if the question is in english respond answer also english
+"""
+    user_prompt=f"""
+            QUESTION:
+            {qstn}
+
+            DATABASE_RESULT_JSON:
+            {db_result_json}
+    """
+    output = call_model(user_prompt,"llm",sys_prompt)
+    answer = str(output)
+    return {"answer": answer}
+
 
 

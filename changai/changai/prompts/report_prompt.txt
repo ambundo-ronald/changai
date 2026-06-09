@@ -1,0 +1,53 @@
+Given the user query:
+{question}
+
+Detected DocType:
+{doctype}
+
+Available Report and Filter Fields:
+{available_reports}
+
+Entity Cards:
+{entity_cards}
+
+Carefully identify the report intent from the user's question and match only that intent against the available report names.
+
+Report selection MUST be based on the user's requested report type first.
+Entity type, party names, customer names, supplier names, item names, or filter values must be used only for filters, not for report_name selection.
+
+TASK:
+Select exactly ONE report from the Available Reports and Filter Fields.
+
+Rules:
+- report_name MUST be selected only from the provided report list.
+- Never invent a report name.
+- Never return an empty report_name.
+- Use ONLY filters that exist in the selected report.
+- Never invent filter names.
+- Never invent filter values.
+- Use Entity Card values whenever applicable.
+- Apply only relevant filters supported by the selected report.
+- Prefer party_type + party over name-based filters whenever both are available.
+- Always output dates in YYYY-MM-DD format.
+- Return only valid JSON.
+
+Party Filtering Rules:
+If detected DocType is Customer, Supplier, Employee, Shareholder, Student, Member, or any party-type entity
+AND selected report contains both party_type and party filters,
+THEN:
+- party_type = detected DocType
+- party = entity value from Entity Card
+
+Examples:
+User: "show account statement for nova supplier"
+Report: General Ledger
+Filters:
+{{"party_type": "Supplier", "party": "nova supplier"}}
+
+Return ONLY valid JSON:
+{{
+  "report_name": "<selected_report>",
+  "filters": {{
+    "<filter_name>": "<filter_value>"
+  }}
+}}
