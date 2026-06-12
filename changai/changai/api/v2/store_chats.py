@@ -27,7 +27,7 @@ def save_logs(
     MAX_LOG_LEN = 140
     doc = frappe.new_doc("ChangAI Logs")
     doc.user_question = user_question
-    safe_question=(formatted_q[:137] + "..." if len(formatted_q) > MAX_LOG_LEN else formatted_q)
+    safe_question=(formatted_q[:137] + "..." if formatted_q and len(formatted_q) > MAX_LOG_LEN else formatted_q or "")
     doc.rewritten_question = safe_question
     doc.schema_retrieved = to_json_if_needed(context)
     doc.sql_generated = to_json_if_needed(sql)

@@ -162,7 +162,7 @@
     "module": "Setup",
     "description": "Legal Entity / Subsidiary with a separate Chart of Accounts belonging to the Organization.",
     "fields": [
-     "details",
+      "details",
       "company_name",
       "abbr",
       "default_currency",
@@ -227,7 +227,6 @@
       "dashboard_tab"
     ]
   },
-
   "Serial and Batch Bundle": {
     "module": "Stock",
     "description": "Standard ERPNext doctype for Serial and Batch Bundle",
@@ -872,7 +871,7 @@
       "connections_tab"
     ]
   },
- "Sales Invoice" : {
+  "Sales Invoice": {
     "module": "Accounts",
     "description": "Standard ERPNext doctype for Sales Invoice",
     "fields": [
@@ -1879,7 +1878,7 @@
       "is_standard"
     ]
   },
- "Purchase Invoice" : {
+  "Purchase Invoice": {
     "module": "Accounts",
     "description": "Standard ERPNext doctype for Purchase Invoice",
     "fields": [
@@ -2099,7 +2098,6 @@
       "payment_request_outstanding"
     ]
   },
-
   "Asset Capitalization": {
     "module": "Assets",
     "description": "Standard ERPNext doctype for Asset Capitalization",
@@ -3482,7 +3480,6 @@
       "status",
       "column_break_112",
       "per_installed",
-      "installation_status",
       "column_break_89",
       "per_returned",
       "transporter_info",
@@ -3529,7 +3526,7 @@
       "connections_tab"
     ]
   },
- "Quotation" : {
+  "Quotation": {
     "module": "Selling",
     "description": "Standard ERPNext doctype for Quotation",
     "fields": [
@@ -11528,34 +11525,6 @@
       "append_emails_to_sent_folder"
     ]
   },
-  "Installation Note": {
-    "module": "Selling",
-    "description": "Standard ERPNext doctype for Installation Note",
-    "fields": [
-      "installation_note",
-      "column_break0",
-      "naming_series",
-      "customer",
-      "customer_address",
-      "contact_person",
-      "customer_name",
-      "address_display",
-      "contact_display",
-      "contact_mobile",
-      "contact_email",
-      "territory",
-      "customer_group",
-      "column_break1",
-      "inst_date",
-      "inst_time",
-      "status",
-      "company",
-      "amended_from",
-      "remarks",
-      "item_details",
-      "items"
-    ]
-  },
   "Maintenance Visit": {
     "module": "Maintenance",
     "description": "Standard ERPNext doctype for Maintenance Visit",
@@ -12000,20 +11969,6 @@
       "allow_dropbox_access",
       "dropbox_refresh_token",
       "dropbox_access_token"
-    ]
-  },
-  "Installation Note Item": {
-    "module": "Selling",
-    "description": "Standard ERPNext doctype for Installation Note Item",
-    "fields": [
-      "item_code",
-      "serial_and_batch_bundle",
-      "serial_no",
-      "qty",
-      "description",
-      "prevdoc_detail_docname",
-      "prevdoc_docname",
-      "prevdoc_doctype"
     ]
   },
   "Account Closing Balance": {

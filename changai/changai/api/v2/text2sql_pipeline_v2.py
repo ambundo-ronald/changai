@@ -52,7 +52,6 @@ from changai.changai.api.v2.store_chats import (
 )
 from changai.changai.api.v2.format_output import (
     format_data
-
 )
 from changai.changai.api.v2.clients import call_model,gemini_client
 from changai.changai.api.v2.non_erp_handler import non_erp_response
@@ -1024,11 +1023,13 @@ def run_text2sql_pipeline(user_question: str, chat_id: str, request_id: str, sen
                 "entity_raw": final.get("entity_raw"),
                 "question_rewritten": formatted_q
             }
+            formatted_q = formatted_q or ""
+
         if final.get("stop_followup"):
             save_turn_2(session_id=chat_id, user_text=user_question, bot_text=final.get("message"),type_="non_erp")
             save_logs(
                 user_question=user_question,
-                formatted_q=None,
+                formatted_q="",
                 context=None,
                 sql=None,
                 val=None,

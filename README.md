@@ -47,7 +47,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 
 8. **Built-In Support Tab** — A dedicated support interface is included within the changAI interface for raising support queries directly from your ERPNext desk, without needing to leave the app or contact support through an external channel.
 
-9. **Module-Wise Training Data Automation** — changAI includes tools to auto-generate training data on a per-module basis across your ERPNext installation. You can select individual modules such as Accounts, Inventory, or HR and generate targeted training data for each, allowing the model's retrieval accuracy to improve incrementally without needing to retrain everything at once.
+9. **Module-Wise Training Data Automation** — changAI includes tools to auto-generate training data on a per-module basis across your ERPNext setup. You can select individual modules such as Accounts, Inventory, or HR and generate targeted training data for each, allowing the model's retrieval accuracy to improve incrementally without needing to retrain everything at once.
 
 10. **Fine-Tuned Embedding Model** — changAI uses a custom fine-tuned embedding model built on nomic-embed-text-v1.5, specifically trained on ERPNext schema and retrieval data for better semantic matching.
 
@@ -77,11 +77,11 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 - Qwen3 via Replicate (Remote Mode) — Used for both schema retrieval and SQL generation in the fully hosted pipeline.
 - Anthropic Claude — Used optionally for schema enrichment. Provide a Claude API key to let changAI analyse your ERPNext customisations and update its understanding of your specific environment.
 - Amazon Polly — Optional voice output engine. Converts query results to speech when the voice assistant feature is enabled.
-- RAG (Retrieval-Augmented Generation) — Core architecture for grounding SQL generation in relevant schema context before passing to the language model.
+- RAG (Retrieval-Augmented Generation) — Core approach for grounding SQL generation in relevant schema context before passing to the language model.
 
 **Frontend**
 
-- [Frappe Desk](https://frappeframework.com) — The ERPNext desk UI framework used to render the changAI interface. Provides the Chat, Debug, and Support tabs as native Frappe pages without requiring a separate frontend build or deployment.
+- [Frappe Desk](https://frappeframework.com) — The ERPNext desk UI framework used to render the changAI interface. Provides the Chat, Debug, and Support tabs as native Frappe pages without requiring a separate frontend build or hosting setup.
 - JavaScript — Used for client-side interactions within the Frappe Desk interface, including query submission, tab switching, and rendering pipeline debug output.
 
 **Dataset**
@@ -107,9 +107,9 @@ The free tier is the fastest way to get started. Generate your API key at [aistu
 
 **Enterprise Tier — Vertex AI (recommended for production)**
 
-For high-volume or production deployments, Vertex AI provides a more scalable and reliable backend. Set up your Google Cloud environment following the [Vertex AI getting started guide](https://cloud.google.com/vertex-ai/docs/start/cloud-environment), then enter the corresponding credentials in changAI Settings.
+For high-volume or production use, Vertex AI provides a more scalable and reliable backend. Set up your Google Cloud environment following the [Vertex AI getting started guide](https://cloud.google.com/vertex-ai/docs/start/cloud-environment), then enter the corresponding credentials in changAI Settings.
 
-**Step 3 — Choose a Deployment Mode**
+**Step 3 — Choose a  Mode**
 
 In addition to the Gemini configuration, changAI supports a Remote Mode that offloads the full pipeline to Replicate .
 
@@ -156,7 +156,7 @@ This step is mandatory. changAI needs to index your master tables before it can 
 
 **Step 7 — Sync Schema (Optional)**
 
-changAI ships pre-configured with the standard ERPNext schema, so core modules work immediately after installation without any additional mapping. If your ERPNext instance has custom doctypes, custom fields, or significant workflow customisations, you can enrich the AI's understanding of your specific environment.
+changAI ships pre-configured with the standard ERPNext schema, so core modules work immediately after setup without any additional mapping. If your ERPNext instance has custom doctypes, custom fields, or significant workflow customisations, you can enrich the AI's understanding of your specific environment.
 
 To do this, enter an [Anthropic Claude API key](https://console.anthropic.com/) in the Remote tab of changAI Settings, then click **Update Schema** in the Training tab. changAI will analyse your customisations and incorporate them into its schema context.
 
@@ -212,10 +212,10 @@ changAI supports ERPNext  v15, and v16 on Ubuntu with Python 3.14 or higher.
 **Note** - Python 3.14 requires sudo apt-get install build-essential python3-dev before bench get-app
 
 **Which modules does changAI cover out of the box?**  
-changAI ships pre-configured with the standard ERPNext schema, so modules like Accounts, Inventory, Purchasing, Sales, and HR work immediately after installation without any additional mapping. Custom doctypes and fields require a schema sync using an Anthropic Claude API key.
+changAI ships pre-configured with the standard ERPNext schema, so modules like Accounts, Inventory, Purchasing, Sales, and HR work immediately after setup without any additional mapping. Custom doctypes and fields require a schema sync using an Anthropic Claude API key.
 
 **Should I use the free Gemini tier or Vertex AI?**  
-The free tier available at Google AI Studio is well suited for testing and low-volume usage. For production deployments with higher query volumes or stricter reliability requirements, Vertex AI is recommended.
+The free tier available at Google AI Studio is well suited for testing and low-volume usage. For production use with higher query volumes or stricter reliability requirements, Vertex AI is recommended.
 
 **Should I use Local Mode or Remote Mode?**  
 Use Local Mode if you want schema retrieval to stay on your own server and use Gemini for SQL generation. Use Remote Mode if you prefer a fully hosted pipeline through Replicate using Qwen3 with no local model dependency.

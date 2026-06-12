@@ -11,6 +11,8 @@ from langchain_community.vectorstores import FAISS
 from changai.changai.api.v2.retrieve import get_embedding_engine
 import os
 import pickle
+from changai.changai.api.v2.non_erp_handler import _safe_open_path
+
 
 def get_app_fvs_base():
     return os.path.join(
@@ -226,11 +228,9 @@ def clean_schema(schema: Dict[str, Any], output_path: str):
                 field for field in fields
                 if field.get("name") not in GENERIC_FIELDS
             ]
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(output_path, "w") as f:
-        yaml.dump(schema, f, allow_unicode=True, sort_keys=False)
-
-    print(f"Cleaned schema written to {output_path}")
+    allowed_dir = str(Path(output_path).parent.resolve())
+    safe = _safe_open_path(output_path, allowed_dir)
+    safe.write_text(yaml.dump(schema, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
 def build_schema_docs(schema: Dict[str, Any]) -> List[Document]:
@@ -427,12 +427,12 @@ def save_field_matrix(schema_docs, base_dir):
     safe_dir.mkdir(parents=True, exist_ok=True)
 
     np.save(safe_dir / "field_embs.npy", embs)
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(safe_dir / "field_docs.pkl", "wb") as f:
-        pickle.dump(schema_docs, f)
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(safe_dir / "table_to_idx.pkl", "wb") as f:
-        pickle.dump(table_to_idx, f)
+    allowed_dir = str(safe_dir)
+    safe_docs = _safe_open_path(str(safe_dir / "field_docs.pkl"), allowed_dir)
+    safe_docs.write_bytes(pickle.dumps(schema_docs))
+
+    safe_idx = _safe_open_path(str(safe_dir / "table_to_idx.pkl"), allowed_dir)
+    safe_idx.write_bytes(pickle.dumps(table_to_idx))
 
 
 def build_schema_fvs_job():

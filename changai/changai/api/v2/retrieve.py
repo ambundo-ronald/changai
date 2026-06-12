@@ -19,6 +19,8 @@ from changai.changai.api.v2.schema_utils import (
     publish_pipeline_update,
     _safe_join,
 )
+from changai.changai.api.v2.non_erp_handler import _safe_open_path
+
 
 from changai.changai.api.v2.clients import (
     _post_json,
@@ -113,8 +115,9 @@ def load_field_matrix():
 
     app_root = Path(frappe.get_app_path("changai")).resolve()
     schema_rel = "changai/api/v2/fvs_stores/erpnext/emb_dir"
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    schema_path = _safe_join(app_root, schema_rel)
+    schema_path = _safe_join(app_root, schema_rel)  # already validates traversal
+
+    allowed_dir = str(schema_path)  # all files must live here
 
     embs_path = schema_path / "field_embs.npy"
     docs_path = schema_path / "field_docs.pkl"
@@ -123,13 +126,11 @@ def load_field_matrix():
     if not embs_path.exists():
         frappe.throw(f"Missing field_embs.npy. Rebuild schema FVS first: {embs_path}")
 
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(docs_path, "rb") as f:
-        docs = pickle.load(f)
+    safe_docs = _safe_open_path(str(docs_path), allowed_dir)
+    docs = pickle.loads(safe_docs.read_bytes())
 
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
-    with open(table_idx_path, "rb") as f:
-        table_to_idx = pickle.load(f)
+    safe_table_idx = _safe_open_path(str(table_idx_path), allowed_dir)
+    table_to_idx = pickle.loads(safe_table_idx.read_bytes())
 
     embs = np.load(embs_path, mmap_mode="r")
 
