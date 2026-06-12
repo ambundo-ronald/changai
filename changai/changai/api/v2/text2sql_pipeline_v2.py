@@ -51,7 +51,6 @@ from changai.changai.api.v2.store_chats import (
    _error_response 
 )
 from changai.changai.api.v2.format_output import (
-    format_data_conversationally,
     format_data
 
 )

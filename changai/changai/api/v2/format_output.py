@@ -591,16 +591,6 @@ def local_format(sql: str, sample_rows: List[Dict[str, Any]]):
     result = format_sql_response(sql, row_count, sample_rows)
     return result
 
-def format_data_conversationally(user_data: Any) -> str:
-    # Safe: CONVERSATION_TEMPLATE is a hardcoded internal template string.
-    # User SQL result is passed only as data context, not as template source.
-    # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
-    return render_template(
-        CONVERSATION_TEMPLATE,  # nosemgrep: frappe-semgrep-rules.rules.security.frappe-ssti
-
-        {"data": user_data}
-    )
-
 def format_data(qstn: str, sql_data: Any) -> Dict[str, str]:
     if isinstance(sql_data, (dict, list)):
         db_result_json = json.dumps(sql_data, ensure_ascii=False, default=str)

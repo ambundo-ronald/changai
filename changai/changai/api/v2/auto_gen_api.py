@@ -587,10 +587,6 @@ def fill_missing_field_descriptions(
 
     meta["last_desc_sync"] = str(now_datetime())
     _save_schema_checkpoint(meta, tables_blocks)
-    # Commit checkpoint immediately so schema sync metadata is persisted
-    # even if later background processing fails.
-    frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
-
     return {
         "ok": True,
         "tables_updated": updated_tables,
@@ -657,8 +653,6 @@ def sync_tables_and_schema_smart() -> Dict[str, Any]:
         _write_schema_outputs(meta, by_table, current_tables)
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
     return {
         "ok": True,
@@ -853,8 +847,6 @@ def _process_pending_field_batches(
                 field["description"] = desc_map[field_name].strip()
                 updated_fields += 1
                 updated_in_table += 1
-        # Required checkpoint commit: this long-running schema enrichment job calls external APIs and must persist partial progress to avoid losing completed batch updates on failure/retry.
-        frappe.db.commit()  # nosemgrep
     return {
         "updated_in_table": updated_in_table,
         "updated_fields": updated_fields,

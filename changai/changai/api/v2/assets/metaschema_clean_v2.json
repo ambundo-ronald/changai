@@ -2975,6 +2975,7 @@
     "language": "TEXT",
     "customer_details": "TEXT",
     "customer_home_address_test": "TEXT",
+    "test_field": "TEXT",
     "customer_primary_address": "TEXT",
     "primary_address": "TEXT",
     "customer_primary_contact": "TEXT",

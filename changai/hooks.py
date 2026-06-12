@@ -175,6 +175,7 @@ doc_events = {
         "on_update": "changai.changai.api.v2.create_qr.create_qr_code",
 
     }
+    # "File":{"after_insert":"changai.changai.api.v2.gdoc_ai.on_file_upload"}
 # # 	"*": {
 # # 		"on_update": "method",
 # # 		"on_cancel": "method",
