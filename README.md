@@ -207,7 +207,7 @@ Natural Language    Result is returned as a human-readable answer
 **Do I need to know SQL to use changAI?**  
 No. changAI is built for non-technical users. You type a question in plain English and the system handles schema lookup, query generation, and result formatting automatically.
 
-**Which ERPNext versions are supported?**  
+**Which ERPNext versions are supported, Does it supports V15?**  
 changAI supports ERPNext  v15, and v16 on Ubuntu with Python 3.14 or higher.
 **Note** - Python 3.14 requires  build-essential python3-dev before bench get-app
 
