@@ -236,7 +236,7 @@ This can happen when the model fails to identify the correct tables or fields fo
 Go to changAI Settings and click Download Embedding Model manually. Make sure your server has outbound internet access at the time of download. If you are on a restricted network, you may need to whitelist the Hugging Face domain.
 
 **Is my ERPNext data sent to external servers?**  
-In Local Mode, schema retrieval runs on your server and only the SQL query context is sent to Gemini for generation. In Remote Mode, schema retrieval also runs on Replicate. If you enable custom schema sync, your schema structure is sent to the Anthropic Claude API. Review your data sharing and compliance requirements before choosing a configuration.
+No. In Local Mode, schema retrieval runs on your server and only the SQL query context is sent to Gemini for generation. In Remote Mode, schema retrieval also runs on Replicate. If you enable custom schema sync, your schema structure is sent to the Anthropic Claude API. Review your data sharing and compliance requirements before choosing a configuration.
 
 **How do I improve accuracy over time?**  
 Run the Train Data Automation feature to generate additional training data from your ERPNext modules. You can also re-sync the Master Data Schema after adding new doctypes or fields, and use the schema update feature to keep changAI aligned with any ERPNext customisations.
