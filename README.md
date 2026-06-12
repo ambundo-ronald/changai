@@ -35,7 +35,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 
 2. **RAG-Powered Schema Retrieval** — changAI uses Retrieval-Augmented Generation to identify the most relevant tables, fields, and master records from your ERPNext schema and Master Data before generating a query. In Local Mode, this retrieval runs entirely on your own server using the downloaded embedding model, keeping your schema data on-premise. This improves accuracy across complex, multi-table questions.
 
-3. **Permission-Aware Results** — Every query is validated through Frappe's native permission layer using the match_conditions API. Users only see data they are authorized to access, making changAI safe to deploy across teams with different roles.
+3. **Permission-Aware Results** — Every query is validated through Frappe's native permission layer using the match_conditions API. Users only see data they are authorized to access
 
 4. **Flexible AI Engine Configuration** — changAI supports multiple AI backends. Local Mode using Google Gemini is the recommended configuration for all users. Gemini is available on a free tier for testing via Google AI Studio and on an enterprise Vertex AI tier for production workloads. Remote Mode using Qwen3 via Replicate exists as an option in settings but is not currently in a stable working phase and is not recommended for production use at this time.
 
@@ -130,7 +130,7 @@ Both schema retrieval and SQL generation are handled by remote Replicate server 
 2. Under the Remote tab, fill in the following fields:
    - Replicate API token
    - Prediction URL
-   - Version IDs for the deployed models
+   - Version IDs 
 3. Save the settings
 > 📺 **Full walkthrough:** [YouTube Setup Guide](https://youtu.be/fFxyAY_sVNs)  
 > 📖 **Full docs:** [docs.claudion.com](https://docs.claudion.com/Claudion-Docs/changaisetup)
@@ -209,7 +209,7 @@ No. changAI is built for non-technical users. You type a question in plain Engli
 
 **Which ERPNext versions are supported?**  
 changAI supports ERPNext  v15, and v16 on Ubuntu with Python 3.14 or higher.
-**Note** - Python 3.14 requires sudo apt-get install build-essential python3-dev before bench get-app
+**Note** - Python 3.14 requires  build-essential python3-dev before bench get-app
 
 **Which modules does changAI cover out of the box?**  
 changAI ships pre-configured with the standard ERPNext schema, so modules like Accounts, Inventory, Purchasing, Sales, and HR work immediately after setup without any additional mapping. Custom doctypes and fields require a schema sync using an Anthropic Claude API key.
