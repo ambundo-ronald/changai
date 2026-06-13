@@ -184,45 +184,42 @@ MASTER_DOCTYPES = [
 ]
 
 
-def is_doctype_schema_changed(doc,last_sync):
-    doctype_modified = frappe.db.get_value(
-        "DocType",
-        doc,
-        "modified"
-    )
-    custom_field_modified = frappe.db.get_value(
-        "Custom Field",
-        {"dt": doc},
-        {"MAX": "modified"}
-    )
-    property_setter_modified = frappe.db.get_value(
-        "Property Setter",
-        {"doc_type": doc},
-        {"MAX": "modified"}
-    )
-    latest = max(
-        [
-            d for d in [
-                doctype_modified,
-                custom_field_modified,
-                property_setter_modified
-            ] if d
-        ],
-        default=None
-    )
-    if latest and last_sync and bool(getdate(latest) > getdate(last_sync)):
-        return True
-    return False
+def is_doctype_schema_changed(doc, last_sync):
+    from frappe.utils import get_datetime
+
+    doctype_modified = frappe.db.get_value("DocType", doc, "modified")
+
+    custom_field_modified = frappe.db.sql(
+        "SELECT MAX(modified) FROM `tabCustom Field` WHERE dt = %s",
+        doc
+    )[0][0]
+
+    property_setter_modified = frappe.db.sql(
+        "SELECT MAX(modified) FROM `tabProperty Setter` WHERE doc_type = %s",
+        doc
+    )[0][0]
+
+    candidates = [
+        get_datetime(d) for d in [
+            doctype_modified,
+            custom_field_modified,
+            property_setter_modified
+        ] if d
+    ]
+
+    latest = max(candidates, default=None)
+    return bool(latest and last_sync and latest > get_datetime(last_sync))
 
 
 def is_master_data_changed(last_sync):
+    from frappe.utils import get_datetime
+
     for doc in MASTER_DOCTYPES:
-        latest_modified = frappe.db.get_value(
-            doc,
-            {},
-             {"MAX": "modified"}
-        )
-        return bool(getdate(latest_modified) > getdate(last_sync)) if latest_modified and last_sync else False
+        latest_modified = frappe.db.sql(
+            f"SELECT MAX(modified) FROM `tab{doc}`"
+        )[0][0]
+        if latest_modified and last_sync and get_datetime(latest_modified) > get_datetime(last_sync):
+            return True
     return False
 
 
