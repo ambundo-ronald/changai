@@ -49,7 +49,7 @@ def create_helpdesk_ticket(subject:str,user:str,email:str,priority:str ="Low", t
             json.dumps(
                 {
             "message": {
-                "kind": "TICKET_CREATED",
+                "kind": "TICKET_CREATION_FAILED",
                 "data": {
                     "error": str(e)
                 }
