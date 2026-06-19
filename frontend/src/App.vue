@@ -215,7 +215,7 @@ else if (response?.create_entity) {
   thinkingMsg.isStatus = false
   thinkingMsg.statusType = null
   thinkingMsg.cancelable = false
-  thinkingMsg.text = `Opening "${response.doc}" doctype for creating Entity "${response.entity_name}" record.`
+  thinkingMsg.text = `Opening "${response.doc}" doctype for creating a new record.`
 
   debugLogs.value.push({
     type: 'success',
@@ -227,55 +227,64 @@ else if (response?.create_entity) {
   currentDebug.value = null
 
   const doctype = response.doc
-  const entityName = response.entity_name || ""
+  const fieldsToFill = response.fields_to_fill || {}
+  const childTables = response.child_tables || {}
 
+  // Fallback: if new fields_to_fill is empty, use old defaultMap logic
+  const entityName = response.entity_name || ""
   const defaultMap = {
-    Customer: {
-      customer_name: entityName
-    },
-    Supplier: {
-      supplier_name: entityName
-    },
-    Employee: {
-      employee_name: entityName
-    },
-    Item: {
-      item_code: entityName,
-      item_name: entityName
-    },
-    Project: {
-      project_name: entityName
-    },
-    Lead: {
-      lead_name: entityName
-    },
-    Opportunity: {
-      opportunity_name: entityName
-    }
+    Customer: { customer_name: entityName },
+    Supplier: { supplier_name: entityName },
+    Employee: { employee_name: entityName },
+    Item: { item_code: entityName, item_name: entityName },
+    Project: { project_name: entityName },
+    Lead: { lead_name: entityName },
+    Opportunity: { opportunity_name: entityName }
   }
 
-  const defaults = defaultMap[doctype] || {}
+  const defaults = Object.keys(fieldsToFill).length > 0
+    ? fieldsToFill
+    : (defaultMap[doctype] || {})
 
   frappe.route_options = defaults
-
   frappe.set_route("Form", doctype, "new")
+
   let attempts = 0
   const timer = setInterval(() => {
-    if (attempts++ > 50) {   // 50 × 200ms = 10 seconds timeout
+    if (attempts++ > 50) {
       clearInterval(timer)
       return
     }
+
     if (cur_frm && cur_frm.doctype === doctype && cur_frm.is_new()) {
       clearInterval(timer)
+
+      // Fill main form fields
       Object.entries(defaults).forEach(([field, value]) => {
         if (value && cur_frm.fields_dict[field]) {
           cur_frm.set_value(field, value)
           cur_frm.refresh_field(field)
         }
       })
+
+      // Fill child tables generically
+      Object.entries(childTables).forEach(([tableField, rows]) => {
+        if (!Array.isArray(rows) || !rows.length) return
+        if (!cur_frm.fields_dict[tableField]) return
+
+        rows.forEach(row => {
+          const childRow = frappe.model.add_child(cur_frm.doc, tableField)
+          Object.entries(row).forEach(([field, value]) => {
+            if (value != null && value !== "") {
+              frappe.model.set_value(childRow.doctype, childRow.name, field, value)
+            }
+          })
+        })
+
+        cur_frm.refresh_field(tableField)
+      })
     }
   }, 200)
-
 
   return
 }
