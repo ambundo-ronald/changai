@@ -217,23 +217,20 @@ def is_master_data_changed_test(last_sync, stored_data: list):
         entity_type = f"tab{doc}"
 
         # ✅ Only compare rows matching title_field
-        stored_titles = {
-            row.get("filters", {}).get("value")
-            for row in stored_data
-            if row.get("entity_type") == entity_type
-            and row.get("filters", {}).get("field") == title_field
-            and row.get("filters", {}).get("value")
-        }
+        allowed_fields = [f.fieldname for f in meta.fields] + ["name"]
+        if title_field not in allowed_fields:
+            frappe.log_error(f"Invalid title_field: {title_field}", "is_master_data_changed_test")
+            continue
 
-        live_records = frappe.db.sql(
-            f"SELECT `{title_field}` FROM `tab{doc}`",
-            as_dict=True
+        live_records = frappe.get_all(
+            doc,
+            fields=[title_field],
+            limit_page_length=0
         )
-        live_titles = {
-            rec.get(title_field)
-            for rec in live_records
-            if rec.get(title_field)
-        }
+        live_titles = set()
+        for rec in live_records:
+            if rec.get(title_field):
+                live_titles.add(rec.get(title_field))
 
         if stored_titles != live_titles:
             return True
