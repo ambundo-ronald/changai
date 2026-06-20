@@ -471,7 +471,7 @@ def _parse_json_list(raw: str) -> List[Any]:
         return []
 
 
-def get_payload(prompt:str,user_prompt:str):
+def get_payload(prompt:str,user_prompt:str,state:SQLState):
     payload={}
     response=call_model(prompt,"llm",user_prompt)
     response = re.sub(r"^```(?:json)?\s*", "", response)
@@ -482,15 +482,37 @@ def get_payload(prompt:str,user_prompt:str):
         try:
             response = json.loads(response)
         except json.JSONDecodeError:
-            return {
-                **state,
-                "error": "Invalid JSON returned by LLM"
-            }
-    payload = response.get("payload", {})
-    return payload
+            return {}
+    return response.get("payload", {})
 
+
+
+def check_update(res:dict):
+    if not res.get("data"):
+        frappe.throw(_(
+            "Master Data does not exist. Because of this, results may not be accurate. "
+            "For better accuracy, please open "
+            "<a href='{0}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Go to Settings Page</a> "
+            "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+            "Check Quick Start Guide Here 👇:<br>"
+            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+        ).format(settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
+
+    if res.get("is_stale"):
+        frappe.throw(_(
+            "Master Data not updated."
+            "Because of this, results may not be accurate. "
+            "For better accuracy, please open "
+            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Go to Settings Page</a> "
+            "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
+            "Check Quick Start Guide Here 👇:<br>"
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
+            "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+        ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
 
 def generate_orm(state: SQLState) -> SQLState:
+    from changai.changai.api.v2.auto_gen_api import update_masterdata
     attempt  = 0
     MAX_TRIES = 4
     payload = {}
@@ -522,7 +544,7 @@ def generate_orm(state: SQLState) -> SQLState:
             }
     try:
         while(attempt < MAX_TRIES):
-            payload = get_payload(prompt, user_prompt)
+            payload = get_payload(prompt, user_prompt,state)
             if payload and payload!={}:
                 break
             attempt += 1
@@ -536,20 +558,21 @@ def generate_orm(state: SQLState) -> SQLState:
             "Payload  generated"
         )
         if cud_type == "insert":
-            response = execute_insert(payload)
-            return {**state,"final_prompt":prompt,"payload":payload, "payload_res": response}
+            response = execute_insert(payload)  
+            return {**state,"sql":"","final_prompt":prompt,"payload":payload, "payload_res": response}
         elif cud_type == "update":
             response = execute_update(payload)
-            return {**state,"final_prompt":prompt,"payload":payload, "payload_res": response}
+            return {**state,"sql":"","final_prompt":prompt,"payload":payload, "payload_res": response}
         elif cud_type == "delete":
             response = execute_delete(payload)
-            return {**state,"final_prompt":prompt,"payload":payload, "payload_res": response}
+            return {**state,"sql":"","final_prompt":prompt,"payload":payload, "payload_res": response}
         else:
             return {
                 **state,
                 "error": f"Unsupported CUD type: {cud_type}"
             }
-
+    except frappe.exceptions.ValidationError:
+        raise
     except Exception as e:
         return {**state,"error": f"LLM call failed: {e}","sql_prompt":prompt}
 
@@ -631,7 +654,7 @@ def generate_sql(state:SQLState) -> SQLState:
             "sql_generated",
             "SQL generated"
         )
-        return {**state,"sql_prompt":prompt,"sql":sql,"payload":payload,"error":None}
+        return {**state,"sql_prompt":prompt,"sql":sql,"payload":payload,"error":None,"payload_res": None}
     except frappe.exceptions.ValidationError:
         raise
     except Exception as e:
@@ -658,7 +681,7 @@ def validate_sql(state: SQLState) -> SQLState:
 
 
 def route_is_cud(state:SQLState):
-    if state["is_cud"]:
+    if state.get("is_cud"):
         return "IS_CUD"
     else:
         return "NOT_CUD"
@@ -710,33 +733,16 @@ def detect_specific_entities(state: SQLState) -> SQLState:
     q = (state.get("formatted_q") or "").strip()
     if not q:
         return {**state, "entity_cards": [], "entity_raw": None}
+    if state.get("is_cud") and state.get("cud_type") == "insert":
+        return {
+            **state,
+            "entity_cards": [],
+            # "entity_raw": out.get("raw"),
+        }
 
     try:
         res = check_file_updates("master_data.yaml")
-
-        if not res.get("data"):
-            frappe.throw(_(
-                "Master Data does not exist. Because of this, results may not be accurate. "
-                "For better accuracy, please open "
-                "<a href='{0}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Go to Settings Page</a> "
-                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
-                "Check Quick Start Guide Here 👇:<br>"
-                "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
-            ).format(settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
-
-        if res.get("is_stale") and res.get("days", 0) > 0:
-            frappe.throw(_(
-                "Your master data is {0} days old. "
-                "Because of this, results may not be accurate. "
-                "For better accuracy, please open "
-                "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Go to Settings Page</a> "
-                "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
-                "Check Quick Start Guide Here 👇:<br>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-                "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
-            ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
-
+        check_update(res)
         out = call_entity_retriever(False, q, state)
         return {
             **state,
@@ -1162,9 +1168,9 @@ def retry_sql(sql, error, formatted_q, sql_prompt):
         retried_sql = clean_sql(rewritten_json.get("sql") or "")
         retried_orm = clean_sql(rewritten_json.get("orm") or "")
     except Exception:
-        return "", "", {"ok": False, "error": "Retry failed to parse response"}
+        return "",{"ok": False, "error": "Retry failed to parse response"}
     if not retried_sql:
-        return "", "", {"ok": False, "error": "Retry returned empty SQL"}
+        return "",{"ok": False, "error": "Retry returned empty SQL"}
     val_res = validate_sql_schema(retried_sql)
     return retried_sql, val_res
 

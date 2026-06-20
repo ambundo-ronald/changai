@@ -168,7 +168,13 @@ def _strip_tab(t: str) -> str:
     t = (t or "").strip()
     return t[3:] if t.startswith("tab") else t
 
-MODULES_TO_SYNC = ["Customer", "Item", "Currency", "Supplier"]
+MODULES_TO_SYNC = [ 
+    "Customer",
+    "Supplier",
+    "Item",
+    "Warehouse",
+    "Company",
+    "Account"]
 
 
 def _normalize_master_data_payload(payload: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
@@ -304,6 +310,8 @@ def sync_master_data_smart() -> Dict[str, Any]:
         "file_url": file_doc.file_url,
         "fvs_error": None,
     }
+
+
 def _clean_schema_fields(by_table: Dict[str, Dict[str, Any]]) -> None:
     for block in by_table.values():
         for field in block.get("fields", []) or []:

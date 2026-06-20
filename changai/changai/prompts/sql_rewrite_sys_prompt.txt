@@ -162,9 +162,14 @@ If open_report = false, return an empty report_intent.
 if entity values in question add them into entity words list like below and
 If the question involves creating, updating, or deleting a record, always add is_cud: true else false with the final response 
 If is_cud is true, also return a "cud_type" field indicating the exact operation:
-  - User wants to create / add / insert a record → "cud_type": "insert"
-  - User wants to update / modify / change a record → "cud_type": "update"
-  - User wants to delete / remove a record → "cud_type": "delete"
+- User wants to create / add / insert a NEW record that does not exist yet → "cud_type": "insert"
+- User wants to update / modify / change / add to an EXISTING record → "cud_type": "update"
+- User wants to delete / remove a record → "cud_type": "delete""
+NEVER use insert_main when:
+- User mentions an existing document
+- User says "add X for/to existing Y"
+- The question has both a thing to add AND a named parent document
+These are always UPDATE operations — not INSERT.
 and return 
 {{
   "standalone_question":"rewritten question here",

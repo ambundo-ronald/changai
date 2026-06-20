@@ -1,6 +1,8 @@
 import frappe
 import json
+import re
 from typing import Any, Dict, List, Tuple, Optional
+
 CHANGAI_GUIDE_LINK="https://app.erpgulf.com/en/articles/chang-ai-quick-start-guide"
 
 @frappe.whitelist(allow_guest=False)
@@ -267,7 +269,65 @@ def _validate_linked_fields(doctype: str, data: dict):
                     f"'{value}' does not exist in {field.options}. Please create it first."
                 )
 
-import re
+def _auto_create_linked(payload: dict, parent_name: str, parent_doc) -> dict:
+    try:
+        frappe.has_permission(payload["linked_doctype"], "create", throw=True)
+
+        linked_doc = frappe.new_doc(payload["linked_doctype"])
+
+        # ✅ Get child table fieldnames from meta
+        meta = frappe.get_meta(payload["linked_doctype"])
+        child_fieldnames = {
+            f.fieldname for f in meta.fields
+            if f.fieldtype in ("Table", "Table MultiSelect")
+        }
+
+        # ✅ Set direct fields on linked doc
+        for field, value in payload.get("data", {}).items():
+            if field not in child_fieldnames:
+                linked_doc.set(field, value)
+
+        # ✅ Append child table rows from payload child_rows
+        for child_table, rows in payload.get("child_rows", {}).items():
+            for row in rows:
+                linked_doc.append(child_table, row)
+
+        # ✅ Try to set minimum required name fields from parent
+        if hasattr(linked_doc, "first_name") and not linked_doc.first_name:
+            name_parts = parent_name.strip().split(" ", 1)
+            linked_doc.first_name = name_parts[0]
+            if hasattr(linked_doc, "last_name"):
+                linked_doc.last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+        if hasattr(linked_doc, "address_title") and not linked_doc.address_title:
+            linked_doc.address_title = parent_name
+
+        linked_doc.append("links", {
+            "link_doctype": payload["doctype"],
+            "link_name": parent_name
+        })
+
+        linked_doc.insert(ignore_permissions=False)
+
+        # ✅ Update link field on parent
+        if payload.get("link_via"):
+            parent_doc.set(payload["link_via"], linked_doc.name)
+            parent_doc.save(ignore_permissions=False)
+
+        return {
+            "success": True,
+            "linked_name": linked_doc.name,
+            "auto_created": True
+        }
+
+    except frappe.exceptions.ValidationError as e:
+        clean_msg = re.sub(r'<[^>]+>', '', str(e))
+        return {"error": f"Could not auto create {payload['linked_doctype']}. {clean_msg}"}
+
+    except Exception as e:
+        return {"error": f"Could not auto create {payload['linked_doctype']} for {parent_name}: {str(e)}"}
+
+
 def _resolve_child_filters(doc, child_table: str, child_filters: dict, data: dict) -> dict:
     """
     If child_filters only contains primary flags (value=1),
@@ -298,7 +358,7 @@ def _resolve_child_filters(doc, child_table: str, child_filters: dict, data: dic
         ):
             return {"name": row.name}
 
-    # No match found
+    # No match found — return original
     return child_filters
 
 
@@ -331,7 +391,6 @@ def _unset_primary_flags(doc, child_table: str, data: dict):
         for flag in flags_to_unset:
             if hasattr(row, flag):
                 row.set(flag, 0)
-
 
 @frappe.whitelist(allow_guest=False)
 def execute_update(payload: dict):
@@ -425,11 +484,19 @@ def execute_update(payload: dict):
 
             doc = frappe.get_doc(payload["doctype"], payload["name"])
 
-            # ✅ Validate child_table exists
+            # ✅ Validate child_table exists via meta
+            meta = frappe.get_meta(payload["doctype"])
+            child_fields = [
+                f.fieldname for f in meta.fields
+                if f.fieldtype in ("Table", "Table MultiSelect")
+            ]
+            if payload["child_table"] not in child_fields:
+                return {
+                    "error": f"Child table '{payload['child_table']}' does not exist on {payload['doctype']}."
+                }
 
             child_filters = payload.get("child_filters") or {}
 
-            # ✅ Step 1 — Resolve filters BEFORE unsetting
             resolved_filters = _resolve_child_filters(
                 doc,
                 payload["child_table"],
@@ -437,10 +504,8 @@ def execute_update(payload: dict):
                 payload["data"]
             )
 
-            # ✅ Step 2 — Unset primary flags
             _unset_primary_flags(doc, payload["child_table"], payload["data"])
 
-            # ✅ Step 3 — Update matching row
             updated = 0
             if resolved_filters:
                 for row in doc.get(payload["child_table"]) or []:
@@ -452,7 +517,6 @@ def execute_update(payload: dict):
                             row.set(field, value)
                         updated += 1
 
-            # ✅ Step 4 — No match or empty filters → append new row
             if updated == 0:
                 doc.append(payload["child_table"], payload["data"])
 
@@ -466,8 +530,10 @@ def execute_update(payload: dict):
                     else "No matching row found — new row added."
             }
 
-        # ─── UPDATE LINKED / LINKED CHILD ──────────────────
+        # ─── UPDATE LINKED / UPDATE LINKED CHILD ───────────
         elif operation in ("update_linked", "update_linked_child"):
+
+            frappe.has_permission(payload["doctype"], "write", throw=True)
 
             if not payload.get("filters"):
                 return {"error": "Filters are required for update_linked."}
@@ -476,11 +542,13 @@ def execute_update(payload: dict):
             if operation == "update_linked" and not payload.get("data"):
                 return {"error": "No data provided for update_linked."}
             if operation == "update_linked_child":
+                frappe.has_permission(payload["linked_doctype"], "write", throw=True)
                 if not payload.get("child_table"):
                     return {"error": "child_table is required for update_linked_child."}
                 if not payload.get("data"):
                     return {"error": "No data provided for update_linked_child."}
 
+            # ✅ Step 1 — Find parent
             parent_name = frappe.db.get_value(
                 payload["doctype"],
                 payload["filters"],
@@ -491,11 +559,14 @@ def execute_update(payload: dict):
 
             parent_doc = frappe.get_doc(payload["doctype"], parent_name)
 
-            # ✅ Find linked doc — direct link first then Dynamic Link
+            # ✅ Step 2 — Find linked doc via direct link field
             linked_name = None
+            auto_created = False
+
             if payload.get("link_via"):
                 linked_name = getattr(parent_doc, payload["link_via"], None)
 
+            # ✅ Step 3 — Fallback to Dynamic Link
             if not linked_name:
                 linked_name = frappe.db.get_value(
                     "Dynamic Link",
@@ -507,24 +578,33 @@ def execute_update(payload: dict):
                     "parent"
                 )
 
+            # ✅ Step 4 — Auto create if not found
             if not linked_name:
-                return {"error": f"No linked {payload['linked_doctype']} found for {parent_name}"}
+                auto_result = _auto_create_linked(payload, parent_name, parent_doc)
+                if auto_result.get("error"):
+                    return auto_result
+                linked_name = auto_result.get("linked_name")
+                auto_created = auto_result.get("auto_created", False)
 
+            # ✅ Step 5 — Load linked doc
             linked_doc = frappe.get_doc(payload["linked_doctype"], linked_name)
 
             # ─── UPDATE LINKED CHILD ───────────────────────
             if operation == "update_linked_child":
 
-                # ✅ Validate child_table exists on linked doc
-                child_rows = linked_doc.get(payload["child_table"])
-                if child_rows is None:
+                # ✅ Validate child_table via meta
+                meta = frappe.get_meta(payload["linked_doctype"])
+                child_fields = [
+                    f.fieldname for f in meta.fields
+                    if f.fieldtype in ("Table", "Table MultiSelect")
+                ]
+                if payload["child_table"] not in child_fields:
                     return {
                         "error": f"Child table '{payload['child_table']}' does not exist on {payload['linked_doctype']}."
                     }
 
                 child_filters = payload.get("child_filters") or {}
 
-                # ✅ Step 1 — Resolve filters BEFORE unsetting
                 resolved_filters = _resolve_child_filters(
                     linked_doc,
                     payload["child_table"],
@@ -532,14 +612,12 @@ def execute_update(payload: dict):
                     payload["data"]
                 )
 
-                # ✅ Step 2 — Unset primary flags
                 _unset_primary_flags(
                     linked_doc,
                     payload["child_table"],
                     payload["data"]
                 )
 
-                # ✅ Step 3 — Update matching row
                 updated = 0
                 if resolved_filters:
                     for row in linked_doc.get(payload["child_table"]) or []:
@@ -551,7 +629,6 @@ def execute_update(payload: dict):
                                 row.set(field, value)
                             updated += 1
 
-                # ✅ Step 4 — No match or empty filters → append new row
                 if updated == 0:
                     linked_doc.append(payload["child_table"], payload["data"])
 
@@ -560,6 +637,7 @@ def execute_update(payload: dict):
                     "success": True,
                     "operation": operation,
                     "linked_doc": linked_name,
+                    "auto_created": auto_created,
                     "message": f"{payload['linked_doctype']} updated successfully."
                         if updated > 0
                         else f"No matching row — new row added to {payload['child_table']}."
@@ -567,6 +645,7 @@ def execute_update(payload: dict):
 
             # ─── UPDATE LINKED DIRECT FIELD ───────────────
             else:
+                frappe.has_permission(payload["linked_doctype"], "write", throw=True)
                 for field, value in payload["data"].items():
                     linked_doc.set(field, value)
                 linked_doc.save(ignore_permissions=False)
@@ -574,6 +653,7 @@ def execute_update(payload: dict):
                     "success": True,
                     "operation": operation,
                     "linked_doc": linked_name,
+                    "auto_created": auto_created,
                     "message": f"{payload['linked_doctype']} updated successfully."
                 }
 
@@ -603,6 +683,7 @@ def execute_update(payload: dict):
         frappe.log_error(frappe.get_traceback(), "execute_update Failed")
         return {"error": f"Update Failed: {str(e)}\n Check Quick Start Guide Here 👇:\n {CHANGAI_GUIDE_LINK}"}
 
+        
 @frappe.whitelist(allow_guest=False)
 def execute_delete(payload:dict):
     try:
@@ -655,6 +736,7 @@ def execute_delete(payload:dict):
 
         # ─── DELETE CHILD ROW ──────────────────────────────
         elif operation == "delete_child":
+            frappe.has_permission(payload["doctype"], "delete", throw=True)
             frappe.has_permission(
                 payload["doctype"],
                 "write",
@@ -693,6 +775,7 @@ def execute_delete(payload:dict):
 
         # ─── DELETE LINKED / LINKED CHILD ──────────────────
         elif operation in ("delete_linked", "delete_linked_child"):
+            frappe.has_permission(payload["doctype"], "delete", throw=True)
 
             parent_name = frappe.db.get_value(
                 payload["doctype"],
@@ -734,7 +817,8 @@ def execute_delete(payload:dict):
                 return {
                     "error": f"No linked {payload['linked_doctype']} found"
                 }
-
+            required_perm = "delete" if operation == "delete_linked" else "write"
+            frappe.has_permission(payload["linked_doctype"], required_perm, throw=True)
             linked_doc = frappe.get_doc(
                 payload["linked_doctype"],
                 linked_name
@@ -764,8 +848,6 @@ def execute_delete(payload:dict):
                 )
 
                 linked_doc.save(ignore_permissions=False)
-
-                
 
                 return {
                     "success": True,
@@ -802,7 +884,6 @@ def execute_delete(payload:dict):
         return {"error": f"User {frappe.session.user} does not have permission to perform this action on {payload.get('doctype')}."}
 
     except frappe.exceptions.ValidationError as e:
-        import re
         clean_msg = re.sub(r'<[^>]+>', '', str(e))
         return {"error": clean_msg}
 

@@ -96,9 +96,12 @@ CHILD TABLE FIELDS OF LINKED DOCTYPES:
   → Use update_linked_child with the linked doctype and the child table fieldname.
 
 ═══ UPDATE OPERATIONS & FORMATS ═══
-── multi_payload ────────────────────────────────────────────
+═══ MULTI PAYLOAD TRIGGER (MANDATORY) ═══
 Use when: multiple update operations needed in one request.
-Use when user wants to update BOTH email AND phone together.
+Use when: user requests multiple updates in one message.
+Each separate update → one payload inside multi_payload.
+NEVER skip or ignore any value the user mentioned.
+Count what user wants to update → generate that many payloads.
 {
   "operation": "multi_payload",
   "payloads": [
@@ -276,6 +279,8 @@ LAW 13: (Table) fields are NEVER placed inside data{}. Ever.
 LAW 14: Child row fields come from the child doctype in SCHEMA CONTEXT — never guessed.
 LAW 15: Never use the ROOT document name as the linked document name — they are always different.
 LAW 16: Always reach linked documents THROUGH their parent document — never update linked docs directly.
+LAW 17: ENTITY_CARDS filter_value MUST be used as-is in filters — 
+        NEVER use raw user text when a matching entity card exists.
 
 ═══ LINKED DOCUMENT UPDATE LAW (CRITICAL) ═══
 
