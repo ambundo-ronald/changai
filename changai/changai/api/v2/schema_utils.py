@@ -210,7 +210,7 @@ def is_doctype_schema_changed(doc, last_sync):
     latest = max(candidates, default=None)
     return bool(latest and last_sync and latest > get_datetime(last_sync))
 
-def is_master_data_changed_test(last_sync, stored_data: list):
+def is_master_data_changed(last_sync, stored_data: list):
     for doc in MASTER_DOCTYPES:
         meta = frappe.get_meta(doc)
         title_field = meta.title_field or "name"
@@ -219,7 +219,7 @@ def is_master_data_changed_test(last_sync, stored_data: list):
         # ✅ Only compare rows matching title_field
         allowed_fields = [f.fieldname for f in meta.fields] + ["name"]
         if title_field not in allowed_fields:
-            frappe.log_error(f"Invalid title_field: {title_field}", "is_master_data_changed_test")
+            frappe.log_error(f"Invalid title_field: {title_field}", "is_master_data_changed")
             continue
 
         live_records = frappe.get_all(
@@ -280,7 +280,7 @@ def check_file_updates(file_name: str):
         else:
             stored_data = []
 
-        if is_master_data_changed_test(last_sync, stored_data):
+        if is_master_data_changed(last_sync, stored_data):
             changed = True
 
     days = days_diff(today(), getdate(last_sync))

@@ -7,6 +7,7 @@ CHANGAI_GUIDE_LINK="https://app.erpgulf.com/en/articles/chang-ai-quick-start-gui
 
 @frappe.whitelist(allow_guest=False)
 def execute_insert(payload: dict) -> Any:
+    from changai.changai.api.v2.auto_gen_api import update_masterdata
     try:
         if isinstance(payload, str):
             payload = json.loads(payload) if payload else {}
@@ -55,6 +56,7 @@ def execute_insert(payload: dict) -> Any:
                         f"{doc.doctype} '{doc.name}' created successfully "
                         f"with linked {after_insert.get('linked_doctype', '')}."
                     )
+            update_masterdata()
 
             return result
         # ─── CASE 2: INSERT CHILD ROW ─────────────────────────
@@ -70,7 +72,7 @@ def execute_insert(payload: dict) -> Any:
             doc = frappe.get_doc(payload["doctype"], parent_name)
             doc.append(payload["child_table"], payload["data"])
             doc.save(ignore_permissions=False)
-            
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "insert_child",
@@ -109,7 +111,7 @@ def execute_insert(payload: dict) -> Any:
                 parent_doc = frappe.get_doc(payload["doctype"], parent_name)
                 parent_doc.set(payload["link_via"], linked_doc.name)
                 parent_doc.save(ignore_permissions=False)
-
+            update_masterdata()
             
             return {
                 "success": True,
@@ -154,7 +156,7 @@ def execute_insert(payload: dict) -> Any:
                 parent_doc = frappe.get_doc(payload["doctype"], parent_name)
                 parent_doc.set(payload["link_via"], linked_doc.name)
                 parent_doc.save(ignore_permissions=False)
-
+            update_masterdata()
             
             return {
                 "success": True,
@@ -190,8 +192,7 @@ def execute_insert(payload: dict) -> Any:
                         "record": record,
                         "error": str(e)
                     })
-
-            
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "insert_bulk",
@@ -222,7 +223,7 @@ def execute_insert(payload: dict) -> Any:
                 **payload["data"]
             })
             doc.insert(ignore_permissions=False)
-            
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "insert_if_not_exists",
@@ -394,6 +395,7 @@ def _unset_primary_flags(doc, child_table: str, data: dict):
 
 @frappe.whitelist(allow_guest=False)
 def execute_update(payload: dict):
+    from changai.changai.api.v2.auto_gen_api import update_masterdata
     try:
         if isinstance(payload, str):
             payload = json.loads(payload)
@@ -409,7 +411,7 @@ def execute_update(payload: dict):
 
             failed = [r for r in results if r.get("error")]
             success = [r for r in results if r.get("success")]
-
+            update_masterdata()
             return {
                 "success": len(failed) == 0,
                 "operation": "multi_payload",
@@ -459,7 +461,7 @@ def execute_update(payload: dict):
                 for field, value in payload["data"].items():
                     doc.set(field, value)
                 doc.save(ignore_permissions=False)
-
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "update",
@@ -521,6 +523,8 @@ def execute_update(payload: dict):
                 doc.append(payload["child_table"], payload["data"])
 
             doc.save(ignore_permissions=False)
+            update_masterdata()
+
             return {
                 "success": True,
                 "operation": "update_child",
@@ -633,6 +637,8 @@ def execute_update(payload: dict):
                     linked_doc.append(payload["child_table"], payload["data"])
 
                 linked_doc.save(ignore_permissions=False)
+                update_masterdata()
+
                 return {
                     "success": True,
                     "operation": operation,
@@ -649,6 +655,8 @@ def execute_update(payload: dict):
                 for field, value in payload["data"].items():
                     linked_doc.set(field, value)
                 linked_doc.save(ignore_permissions=False)
+                update_masterdata()
+
                 return {
                     "success": True,
                     "operation": operation,
@@ -686,6 +694,7 @@ def execute_update(payload: dict):
         
 @frappe.whitelist(allow_guest=False)
 def execute_delete(payload:dict):
+    from changai.changai.api.v2.auto_gen_api import update_masterdata
     try:
         if isinstance(payload, str):
             payload = json.loads(payload)
@@ -725,7 +734,8 @@ def execute_delete(payload:dict):
                 deleted.append(record.name)
 
             
-
+            update_masterdata()
+            
             return {
                 "success": True,
                 "operation": "delete",
@@ -764,8 +774,7 @@ def execute_delete(payload:dict):
             deleted = before - len(doc.get(payload["child_table"]))
 
             doc.save(ignore_permissions=False)
-            
-
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "delete_child",
@@ -848,7 +857,7 @@ def execute_delete(payload:dict):
                 )
 
                 linked_doc.save(ignore_permissions=False)
-
+                update_masterdata()
                 return {
                     "success": True,
                     "operation": "delete_linked_child",
@@ -869,7 +878,7 @@ def execute_delete(payload:dict):
             )
 
             
-
+            update_masterdata()
             return {
                 "success": True,
                 "operation": "delete_linked",
