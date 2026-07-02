@@ -224,8 +224,7 @@ def is_doctype_schema_changed(doc, last_sync):
     latest = max(candidates, default=None)
     return bool(latest and last_sync and latest > get_datetime(last_sync))
 
-@frappe.whitelist(allow_guest=True)
-def is_master_data_changed(last_sync, stored_data: list):
+def is_master_data_changed(last_sync: str, stored_data: list):
     for doc in MASTER_DOCTYPES:
         meta = frappe.get_meta(doc)
         title_field = meta.title_field or "name"
@@ -265,7 +264,7 @@ def is_master_data_changed(last_sync, stored_data: list):
             return True
     return False
 
-@frappe.whitelist(allow_guest=True)
+
 def check_file_updates(file_name: str):
     RAG_FOLDER = "Home/RAG Sources"
     from changai.changai.api.v2.build_cards_faiss_index_v2 import _read_file_doc
@@ -307,10 +306,6 @@ def check_file_updates(file_name: str):
             stored_data = parsed.get("data", []) if isinstance(parsed, dict) else []
         else:
             stored_data = []
-        # stored_titles, live_titles = is_master_data_changed(last_sync, stored_data)
-        # return stored_titles, live_titles
-        # res,data = is_master_data_changed(last_sync, stored_data)
-        # return res,data
         if is_master_data_changed(last_sync, stored_data):
             changed = True
 
