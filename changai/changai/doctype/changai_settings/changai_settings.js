@@ -109,10 +109,6 @@ frappe.ui.form.on("ChangAI Settings", {
                 text: `Google Cloud Project ID for Gemini Paid Tier.`,
             },
             {
-                fieldname: "gemini_json_content",
-                text: `Google Cloud Service Account JSON credentials.`,
-            },
-            {
                 fieldname: "llm",
                 text: `Select the AI model used for SQL generation and responses.`,
             },

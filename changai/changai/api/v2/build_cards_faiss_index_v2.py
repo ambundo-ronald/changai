@@ -162,29 +162,12 @@ def _is_valid_schema_table(table_block: Any) -> bool:
     return isinstance(table_block, dict) and "table" in table_block
 
 
-def _build_field_metadata(table_name: str, field_name: str, module: str, join_hint: str, options: Any) -> Dict[str, Any]:
-    metadata = {
-        "type": "field",
-        "table": table_name,
-        "field": field_name,
-        "module": module,
-    }
-    if options:
-        metadata["options"] = options
-    if join_hint:
-        metadata["join_hint"] = join_hint
-    return metadata
-
-
-def _build_field_page_content(table_name: str, field_name: str, field_desc: str, join_hint: str, options: Any) -> str:
-    page_content = f"[FIELD] {field_name} | [TABLE] {table_name}\n{field_desc}"
-    if join_hint:
-        page_content += f"\n{join_hint}"
-    if options:
-        page_content += f"\n{options}"
-    return page_content
-
-def _build_field_document(table_name: str, module: str, field_row: Dict[str, Any]) -> Optional[Document]:
+def _build_field_document(
+    table_name: str,
+    module: str,
+    field_row: Dict[str, Any],
+    grain: str = ""                                     # ✅ Add this param
+) -> Optional[Document]:
     if not isinstance(field_row, dict):
         return None
 
@@ -194,37 +177,41 @@ def _build_field_document(table_name: str, module: str, field_row: Dict[str, Any
 
     field_desc = field_row.get("description", "") or ""
     join_hint = field_row.get("join_hint") or ""
-    child_hint = field_row.get("child_hint") or ""      # ✅ Add this
+    child_hint = field_row.get("child_hint") or ""
     options = field_row.get("options") or ""
-    fieldtype = field_row.get("fieldtype") or ""        # ✅ Add this
-    is_table_field = fieldtype in ("Table", "Table MultiSelect")  # ✅ Add this
+    fieldtype = field_row.get("fieldtype") or ""
+    is_table_field = fieldtype in ("Table", "Table MultiSelect")
 
     # Build page content
     page_content = f"[FIELD] {field_name} | [TABLE] {table_name}\n{field_desc}"
     if join_hint:
         page_content += f"\n{join_hint}"
-    if child_hint and is_table_field:                   # ✅ Add child hint to content
+    if child_hint and is_table_field:
         if isinstance(child_hint, dict):
             page_content += f"\nChild Table: {child_hint.get('child_table', '')}"
         else:
             page_content += f"\n{child_hint}"
     if options:
         page_content += f"\n{options}"
+    if grain:                                            # ✅ Add this
+        page_content += f"\nGRAIN: {grain}"               # ✅ Add this
 
     # Build metadata
     metadata = {
         "type": "field",
         "table": table_name,
         "field": field_name,
-        "fieldtype": fieldtype,                         # ✅ Store fieldtype
+        "fieldtype": fieldtype,
         "module": module,
     }
     if options:
         metadata["options"] = options
     if join_hint:
         metadata["join_hint"] = join_hint
-    if child_hint and is_table_field:                   # ✅ Store child_hint
+    if child_hint and is_table_field:
         metadata["child_hint"] = child_hint
+    if grain:                                            # ✅ Add this
+        metadata["grain"] = grain                         # ✅ Add this — this is what retrieve.py reads
 
     return Document(
         page_content=page_content,
@@ -267,6 +254,7 @@ def build_schema_docs(schema: Dict[str, Any]) -> List[Document]:
 
         table_name = table_block.get("table")
         module = table_block.get("module", "")
+        grain = table_block.get("grain", "")  
         fields = table_block.get("fields") or []
 
         if not isinstance(fields, list):
@@ -277,7 +265,7 @@ def build_schema_docs(schema: Dict[str, Any]) -> List[Document]:
             if field_name in GENERIC_FIELDS:
                 continue
                 
-            doc = _build_field_document(table_name, module, field_row)
+            doc = _build_field_document(table_name, module, field_row,grain)
             if doc:
                 docs.append(doc)
 
@@ -307,13 +295,24 @@ def _build_entity_text(md: Dict[str, Any]) -> str:
 
 
 def _build_entity_metadata(md: Dict[str, Any]) -> Dict[str, Any]:
+    filters = md.get("filters")
+    if isinstance(filters, dict):
+        filters = [filters]
+    elif not isinstance(filters, list):
+        filters = []
+
+    labels = [
+        f"{f.get('field')}:{f.get('value')}"
+        for f in filters
+        if isinstance(f, dict) and f.get("field")
+    ]
+    entity_label = "; ".join(labels) if labels else ""
+
     return {
         "type": "entity",
         "entity_type": md.get("entity_type"),
         "entity_id": md.get('entity_id'),
-        "entity_label": f"{md.get('filters', {}).get('field')}:{md.get('filters', {}).get('value')}"
-        # "canonical_name": md.get("canonical_name"),
-        # "aliases": md.get("aliases", []),
+        "entity_label": entity_label,
     }
 
 
@@ -458,7 +457,7 @@ def build_schema_fvs_job():
         # schema = clean_schema(schema,schema_path)
         schema_docs = build_schema_docs(schema)
         app_base, _, _, schema_path, _,schema_emb_dir, _ = _get_fvs_paths()
-        _build_and_save_faiss(schema_docs, schema_path, "ERPNext Schema FVS", app_base)
+        # _build_and_save_faiss(schema_docs, schema_path, "ERPNext Schema FVS", app_base)
         save_field_matrix(schema_docs, schema_emb_dir)
         frappe.logger().info(f"ERPNext Schema FVS built: {len(schema_docs)} docs")
     except Exception :

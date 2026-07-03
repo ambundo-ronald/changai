@@ -285,7 +285,8 @@
   {
    "fieldname": "gemini_json_content",
    "fieldtype": "Code",
-   "label": "Service Account Credentials"
+   "label": "Service Account Credentials",
+   "options": "JSON"
   },
   {
    "fieldname": "gemini_api_key",
@@ -407,7 +408,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-15 07:18:36.158706",
+ "modified": "2026-06-24 13:36:59.025672",
  "modified_by": "Administrator",
  "module": "Changai",
  "name": "ChangAI Settings",

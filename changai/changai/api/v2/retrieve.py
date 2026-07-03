@@ -518,6 +518,7 @@ def call_fvs_field_search_global_k(
         is_table = meta.get("is_table")
         table = meta.get("table")
         field = meta.get("field") or meta.get("name")
+        grain = meta.get("grain", "")
 
         if not table or not field:
             continue
@@ -562,6 +563,7 @@ def call_fvs_field_search_global_k(
 
         grouped.setdefault(table, {
             "is_table": is_table,
+            "grain":grain,
             "fields": []
         })
         grouped[table]["fields"].append(name)

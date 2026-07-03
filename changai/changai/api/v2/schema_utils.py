@@ -30,6 +30,8 @@ RAG_FOLDER = "Home/RAG Sources"
 JSON_EXT = ".json"
 YAML_EXT = ".yaml"
 
+
+
 def get_report_filter_fields(report_name: str):
     try:
         script = get_script(report_name).get("script") or ""
@@ -61,12 +63,24 @@ def phonetic_bucket():
     master_items = master_data_content["data"]
     for item in master_items:
         table = item["entity_type"]
-        field = item["filters"]["field"]
-        value = item["filters"]["value"]
-        _VALUE_TO_FIELD[value] = f"{table}.{field}:{value}"
-        first_word = value.split()[0]
-        key = jellyfish.metaphone(first_word)
-        _PHONETIC_BUCKETS[key].append(value)
+        filters = item.get("filters")
+        if isinstance(filters, dict):
+            filters = [filters]
+        elif not isinstance(filters, list):
+            continue
+
+        for f in filters:
+            if not isinstance(f, dict):
+                continue
+            field = f.get("field")
+            value = f.get("value")
+            if not field or not value:
+                continue
+
+            _VALUE_TO_FIELD[value] = f"{table}.{field}:{value}"
+            first_word = value.split()[0]
+            key = jellyfish.metaphone(first_word)
+            _PHONETIC_BUCKETS[key].append(value)
 
 
 @frappe.whitelist(allow_guest=False)
@@ -210,18 +224,31 @@ def is_doctype_schema_changed(doc, last_sync):
     latest = max(candidates, default=None)
     return bool(latest and last_sync and latest > get_datetime(last_sync))
 
-def is_master_data_changed(last_sync, stored_data: list):
+def is_master_data_changed(last_sync: str, stored_data: list):
     for doc in MASTER_DOCTYPES:
         meta = frappe.get_meta(doc)
         title_field = meta.title_field or "name"
         entity_type = f"tab{doc}"
-
-        # ✅ Only compare rows matching title_field
         allowed_fields = [f.fieldname for f in meta.fields] + ["name"]
         if title_field not in allowed_fields:
             frappe.log_error(f"Invalid title_field: {title_field}", "is_master_data_changed")
             continue
-
+        stored_titles = set()
+        for row in stored_data:
+            if (row.get("entity_type") != entity_type):
+                continue
+            filters = row.get("filters")
+            if isinstance(filters, dict):
+                filters = [filters]
+            elif not isinstance(filters, list):
+                filters = []
+            for f in filters:
+                if (
+                    isinstance(f, dict)
+                    and f.get("field") == title_field
+                    and f.get("value")
+                ):
+                    stored_titles.add(f.get("value"))
         live_records = frappe.get_all(
             doc,
             fields=[title_field],
@@ -231,13 +258,13 @@ def is_master_data_changed(last_sync, stored_data: list):
         for rec in live_records:
             if rec.get(title_field):
                 live_titles.add(rec.get(title_field))
-
+        if stored_titles == live_titles:
+            return False
         if stored_titles != live_titles:
             return True
-
     return False
 
-@frappe.whitelist(allow_guest=False)
+
 def check_file_updates(file_name: str):
     RAG_FOLDER = "Home/RAG Sources"
     from changai.changai.api.v2.build_cards_faiss_index_v2 import _read_file_doc
@@ -279,7 +306,6 @@ def check_file_updates(file_name: str):
             stored_data = parsed.get("data", []) if isinstance(parsed, dict) else []
         else:
             stored_data = []
-
         if is_master_data_changed(last_sync, stored_data):
             changed = True
 
@@ -421,6 +447,7 @@ def format_schema_context(grouped: dict) -> str:
         if isinstance(table_data, dict):
             raw_fields = table_data.get("fields", [])
             is_table_value = table_data.get("is_table")
+            grain = table_data.get("grain", "") 
 
             if is_table_value is None:
                 child = is_child_table(table)
@@ -429,11 +456,14 @@ def format_schema_context(grouped: dict) -> str:
         else:
             raw_fields = table_data
             child = is_child_table(table)
+            grain = ""
 
         fields = enrich_fields_for_sql_context(table, raw_fields)
 
         parts.append(f"TABLE: {table}")
         parts.append(f"TYPE: {'Child Table' if child else 'Main Table'}")
+        if grain:
+            parts.append(f"GRAIN: {grain}")
 
         if child:
             parts.append("JOIN RULES:")

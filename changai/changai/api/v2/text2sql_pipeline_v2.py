@@ -443,6 +443,9 @@ def rewrite_question(state: SQLState) -> SQLState:
         return {**state, "error": str(e)}
 
 
+import frappe
+from typing import Dict, Any
+
 ENTITY_CREATION_PROMPT = read_asset("create_entity_prompt.txt", base="prompts")
 def create_entity(state:SQLState):
     request_id = state.get("request_id")
@@ -1188,28 +1191,19 @@ def run_text2sql_pipeline(
     request_id: str,
     sendNonErptoAI: bool = False
 ) -> Dict:
-
     memory_status = check_memory_status()
-
-    # --------------------------------------------------
-    # CACHE
-    # --------------------------------------------------
     logs = find_similar_log_question(user_question)
-
     if logs.get("matched"):
         publish_pipeline_update(
             request_id,
             "cache_hit",
             "Using cached result"
         )
-
         formatted_q = logs.get("rewritten_question")
         sql = logs.get("sql")
-
         tables = json.loads(logs.get("tables") or "[]")
         fields = logs.get("fields") or ""
         entity_debug = json.loads(logs.get("entity_debug") or "{}")
-
         return _handle_sql_result(
             memory_status,
             request_id,

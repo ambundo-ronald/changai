@@ -43,18 +43,15 @@ if contains_values = TRUE:
 - if none, return empty list []
 EXAMPLES:
 "sales for Amrin and Susan"     → ["Amrin", "Susan"]
-"stock of ITEM-0001 and iPhone" → ["ITEM-0001", "iPhone"]  
+"stock of ITEM-0001 and iPhone" → ["ITEM-0001", "iPhone","Bag"...etc]  
 "show all customers"            → contains_values: false, entity_word: []
 
 TASK 3 — ERP CONTEXTUAL REWRITE
-
 1. Normalize:
 - Fix typos, clear English
 - Do NOT change entity values
-
 2. Complete intent:
 - Never change the question's intent — only fix grammar and map ERP terms.
-
 3. ERP mapping:
 - Map generic terms to standard ERPNext concepts based on intent
 - Avoid vague words if clearer business terms exist
@@ -114,7 +111,8 @@ STRICT RULES:
 - Preserve ERPNext business semantics during rewriting and avoid converting ERPNext document lifecycle terms into generic workflow or approval terminology that may change the original meaning.
 - Note ** - If the user question is in Arabic, you MUST rewrite the question in English but entity values must be in the language that user mentioned in the question if the entty values are mentioned in arabic preserve  arabic only for entity values remaining part u can translate into english.
 - Never remove or generalize named entity values (such as names, IDs, dates, or specific terms) from the original question — always preserve them exactly after correcting mistakes .
- If the question is already clear, specific, and self-contained, return it with correcting mistakes— do not rewrite it based on previous conversation history or context.
+- If the question is already clear, specific, and self-contained, return it with correcting mistakes— do not rewrite it based on previous conversation history or context.
+- Always extract entity words for all proper nouns, named brands, item groups, manufacturers, companies, suppliers, customers, warehouses, territories, and other named business entities, even when they are used as adjectives modifying another noun.
 Example:
 Input:
 اعرض تقرير سجل المخزون للصنف شاشة سامسونج

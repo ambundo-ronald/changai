@@ -201,11 +201,11 @@ def _extract_existing_keys(data: List[Any]) -> Set[tuple]:
     return keys
 
 
-def _build_master_data_row(entity_type: str, entity_id:str,title_field:str) -> Dict[str, Any]:
+def _build_master_data_row(entity_type: str, entity_id:str,title_field:str,filter: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "entity_type": entity_type,
-        "entity_id": title_field,
-        "filters": {"field": title_field if title_field else "name", "value": entity_id},
+        "entity_id": entity_id,
+        "filters": filter or {"field": title_field if title_field else "name", "value": entity_id},
     }
 
 
@@ -271,25 +271,17 @@ def sync_master_data_smart() -> Dict[str, Any]:
         for rec in live_records:
             if mod == "Item":
                 item_code = rec.get("name")
-                if item_code:
-                    rebuilt_rows.append(
-                _build_master_data_row(
-                    entity_type,
-                    item_code,
-                    "name"
-                ))
                 item_name = rec.get(title_field)
-                if item_name:
+                if item_code:
+                    filters = [{"field": "item_code", "value": item_code}]
+                    if item_name and item_name != item_code:
+                        filters.append({"field": "item_name", "value": item_name})
                     rebuilt_rows.append(
-                _build_master_data_row(
-                    entity_type,
-                    item_name,
-                    title_field
-                )
-            )
-            else:                    
+                        _build_master_data_row(entity_type, item_code, title_field, filters)
+                    )
+            else:
                 entity_id = rec.get(title_field) if title_field in rec else rec.get("name")
-                rebuilt_rows.append(_build_master_data_row(entity_type, entity_id,title_field))
+                rebuilt_rows.append(_build_master_data_row(entity_type, entity_id, title_field, None))   
     final_data = rebuilt_rows
     meta["last_sync"] = str(now_datetime())
     settings = frappe.get_single("ChangAI Settings")
@@ -463,6 +455,7 @@ def _update_or_create_table_block(
         "table": table,
         "description": "",
         "fields": fields,
+        "grain":"",
         "desc_done": False,
     }
 def _build_field_entry(
@@ -559,6 +552,12 @@ def _has_pending_descriptions(fields: List[Dict[str, Any]]) -> bool:
         if isinstance(field, dict) and field.get("name")
     )
 
+def _infer_grain_label(meta_dt: Any, table: str) -> str:
+
+    if meta_dt.istable:
+        return f"GRAIN: 1 row per parent document + idx (child table of {table}). Comparison-ready across parent records."
+    return f"GRAIN: 1 row per {_strip_tab(table)} document (master/transaction). Use only for single-entity lookups, not cross-record comparison unless fields are per-relationship (e.g. supplier, price_list)."
+
 
 def _process_schema_table(table: str, by_table: Dict[str, Dict[str, Any]]) -> bool:
     dt = _strip_tab(table)
@@ -569,6 +568,7 @@ def _process_schema_table(table: str, by_table: Dict[str, Dict[str, Any]]) -> bo
     meta_dt = frappe.get_meta(dt)
     block = by_table.setdefault(table, {})
     block["is_table"] = bool(meta_dt.istable)
+    block["grain"] = _infer_grain_label(meta_dt, table)
     existing_fields = _get_existing_fields_for_table(by_table, table)
     fields = _build_fields_from_meta(meta_dt, existing_fields)
     _update_or_create_table_block(by_table, table, fields)
@@ -655,7 +655,6 @@ def fill_missing_field_descriptions(
 def sync_tables_and_schema_smart() -> Dict[str, Any]:
     payload = _read_filedoctype(SCHEMA_YAML, RAG_FOLDER)
     meta, tables_blocks = _normalize_schema_payload(payload)
-
     by_table = _build_table_map(tables_blocks)
     last_sync_raw = meta.get("last_sync")
     changed_doctypes = _get_changed_doctypes(last_sync_raw)
