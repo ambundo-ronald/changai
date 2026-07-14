@@ -5504,14 +5504,6 @@
     }
   },
   {
-    "table_name": "tabZATCA ERPGulf Success Log",
-    "text": "SYSTEM: ZATCA ERPGulf Success Log - TRACKS successful electronic invoice submissions to ZATCA, compliance verification | submission_id, timestamp, status | Use for 'compliance tracking', 'submission success logs', 'ZATCA integration status' | NOT for invoice creation (use Sales Invoice), NOT for error logs (use Error Log)",
-    "metadata": {
-      "module": "SYSTEM",
-      "source": "ai_generated"
-    }
-  },
-  {
     "table_name": "tabZATCA Multiple Setting",
     "text": "ACCOUNTING: ZATCA Multiple Setting - Configuration for compliance with ZATCA e-invoicing regulations | enable_vat, invoice_format, compliance_level | Use for 'ZATCA compliance settings', 'e-invoice configuration', 'VAT settings' | NOT for individual invoices (use Sales Invoice), NOT for general tax settings (use Tax Rule)",
     "metadata": {

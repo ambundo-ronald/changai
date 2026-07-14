@@ -1,4 +1,4 @@
-// Copyright (c) 2026, ERPGulf and contributors
+// Copyright (c) 2026, Norwa Group and contributors
 // For license information, please see license.txt
 frappe.ui.form.on("ChangAI Settings", {
     refresh: async function (frm) {
@@ -82,7 +82,7 @@ frappe.ui.form.on("ChangAI Settings", {
         const fieldsWithTooltips = [
             {
                 fieldname: "remote",
-                text: `Use a remote AI server instead of the local server.`,
+                text: `Use the configured Replicate services for remote schema and entity retrieval. The AI Provider field controls response generation.`,
             },
             {
                 fieldname: "from_language",
@@ -110,7 +110,15 @@ frappe.ui.form.on("ChangAI Settings", {
             },
             {
                 fieldname: "llm",
-                text: `Select the AI model used for SQL generation and responses.`,
+                text: `Select Gemini, a local Ollama model, or QWEN3 via the configured Replicate deployment.`,
+            },
+            {
+                fieldname: "ollama_url",
+                text: `Ollama base URL reachable from the Frappe server. Use http://127.0.0.1:11434 only when Ollama runs on the same host.`,
+            },
+            {
+                fieldname: "ollama_model",
+                text: `Exact Ollama model name already installed with ollama pull.`,
             },
             {
                 fieldname: "result_formatting",

@@ -4390,8 +4390,6 @@ Workstation Type:
   docstatus: *id001
 Workstation Working Hour:
   docstatus: *id001
-ZATCA ERPGulf Success Log:
-  docstatus: *id001
 ZATCA Multiple Setting:
   docstatus: *id001
 Zatca POS table:

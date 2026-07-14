@@ -3,7 +3,7 @@ import json
 import re
 from typing import Any, Dict, List, Tuple, Optional
 
-CHANGAI_GUIDE_LINK="https://app.erpgulf.com/en/articles/chang-ai-quick-start-guide"
+CHANGAI_GUIDE_LINK="https://github.com/ambundo-ronald/changai#configuration"
 
 @frappe.whitelist(allow_guest=False)
 def execute_insert(payload: dict) -> Any:

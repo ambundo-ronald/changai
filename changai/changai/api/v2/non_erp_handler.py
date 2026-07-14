@@ -61,11 +61,11 @@ class IntelligentStaticResponder:
 
         self.en_brand_aliases = {
             k: v for k, v in self.en_alias_map.items()
-            if v in {"changai", "erpgulf"}
+            if v in {"changai", "norwa group"}
         }
         self.ar_brand_aliases = {
             k: v for k, v in self.ar_alias_map.items()
-            if v in {"changai", "erpgulf"}
+            if v in {"changai", "norwa group"}
         }
 
         self.safe_categories_for_partial = {
@@ -618,9 +618,9 @@ def non_erp_response(non_erp_q: str) -> Optional[str]:
         score_cutoff=65
     )
     if not result:
-        return {"data":"Hey Iam ChangAI from ERPGulf,iam here to help you with your queries..."}
+        return {"data":"Hey, I am ChangAI from Norwa Group. I am here to help with your queries."}
     matched_q = result[0]
-    return {"data": response_map.get(matched_q, "Hey Iam ChangAI from ERPGulf,iam here to help you with your queries...")}
+    return {"data": response_map.get(matched_q, "Hey, I am ChangAI from Norwa Group. I am here to help with your queries.")}
 
 
 def load_non_erp_data():

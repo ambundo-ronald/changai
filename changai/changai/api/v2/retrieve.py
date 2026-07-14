@@ -13,7 +13,7 @@ from changai.changai.api.v2.tts import get_polly_client
 from changai.changai.api.v2.schema_utils import (
     ChangAIConfig,
     CHANGAI_GUIDE_LINK,
-    ERPGULF_LINK,
+    PROJECT_LINK,
     settingsUrl,
     format_schema_context,
     publish_pipeline_update,
@@ -102,8 +102,8 @@ def download_model_from_ui():
         frappe.log_error(frappe.get_traceback(), "Embedding Model Download Failed")
         frappe.throw(_("Model download failed: {0}\n Check Quick Start Guide Here 👇:\n{1} <br>" 
         "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Download Embedding Model</a></b>.<br>"
-        "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
-).format(str(e),CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK))
+        "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
+).format(str(e),CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK))
 
 
 
@@ -156,9 +156,9 @@ def get_embedding_engine():
                 "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Download Embedding Model</a></b>.<br><br>"
                 "Check this Quick Start Guide for more detail: "
                 "<a href='{0}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
+                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
 
-            ).format(CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK),
+            ).format(CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK),
             title=_("Embedding Model Required")
         )
     
@@ -241,13 +241,13 @@ def get_master_vs():
                     "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
                     "Check Quick Start Guide Here 👇<br>"
                     "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Click here</a><br><br><br>"
-                    "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
+                    "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Project page</a>"
 
                 ).format(
                     master_vs_path,
                     settingsUrl,
                     CHANGAI_GUIDE_LINK,
-                    ERPGULF_LINK
+                    PROJECT_LINK
                 ))
 
             _VS_MASTER = FAISS.load_local(
@@ -629,7 +629,7 @@ def remote_entity_embedder(q: str) -> Union[list, str]:
         "Prefer": "wait",
         "Authorization": f"Bearer {config['API_TOKEN']}",
     }
-    response = _post_json(config["URL"], headers, payload)
+    response = _post_json(config["prediction_url"], headers, payload)
     return response
 
 

@@ -10,7 +10,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 [![Platform](https://img.shields.io/badge/platform-Ubuntu-lightgrey.svg)](https://ubuntu.com)
 [![Maintained](https://img.shields.io/badge/status-actively%20maintained-brightgreen.svg)]()
 
-[Setup Guide](https://youtu.be/fFxyAY_sVNs) · [Documentation](https://docs.claudion.com/Claudion-Docs/changaisetup) · [Report a Bug](https://github.com/ERPGulf/changAI/issues) · [Embedding Model 🤗](https://huggingface.co/hyrinmansoor/changAI-nomic-embed-text-v1.5-finetuned)
+[Configuration](#configuration) · [Report a Bug](https://github.com/ambundo-ronald/changai/issues) · [Embedding Model 🤗](https://huggingface.co/hyrinmansoor/changAI-nomic-embed-text-v1.5-finetuned)
 
 </div>
 
@@ -37,7 +37,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 
 3. **Permission-Aware Results** — Every query is validated through Frappe's native permission layer using the match_conditions API. Users only see data they are authorized to access
 
-4. **Flexible AI Engine Configuration** — changAI supports multiple AI backends. Local Mode using Google Gemini is the recommended configuration for all users. Gemini is available on a free tier for testing via Google AI Studio and on an enterprise Vertex AI tier for production workloads. Remote Mode using Qwen3 via Replicate exists as an option in settings but is not currently in a stable working phase and is not recommended for production use at this time.
+4. **Flexible AI Engine Configuration** — changAI lets administrators select Gemini, Ollama, or QWEN3 as the AI provider. Gemini supports Google AI Studio and Vertex AI, Ollama runs a model reachable from the Frappe server, and QWEN3 uses the configured Replicate deployment.
 
 5. **Voice Assistant via Amazon Polly** — changAI includes an optional voice output feature powered by Amazon Polly. When enabled, query results can be read aloud, making it easier to consume insights hands-free or in review sessions.
 
@@ -74,7 +74,7 @@ Open-source AI assistant for ERPNext. Ask business questions in plain English an
 ## Tech Stack
 
 **Backend**
-** Please note new URL on github https://github.com/ERPGulf/changai**
+** Please note new URL on github https://github.com/ambundo-ronald/changai**
 - [Frappe Framework](https://frappeframework.com) — Full-stack Python web framework that powers ERPNext. Handles authentication, permissions, database queries, and API routing.
 - Python 3.14 — Core language for all backend logic, model serving, and pipeline orchestration.
 **Note** - Python 3.14 requires sudo apt-get install build-essential python3-dev before bench get-app
@@ -107,9 +107,17 @@ After installing changAI on your ERPNext site through Frappe Cloud or your bench
 
 Search for **changAI Settings** in the ERPNext search bar and open the settings page. This is the central place where all engines, credentials, and options for changAI are configured.
 
-**Step 2 — Configure the Query Engine (Google Gemini)**
+**Step 2 — Choose and Configure the AI Provider**
 
-changAI uses Google Gemini as its  engine for generating SQL from your natural language queries. Two tiers are available depending on your usage requirements.
+Select **Gemini**, **Ollama**, or **QWEN3** in the **AI Provider** field in changAI Settings.
+
+**Ollama**
+
+Install Ollama on a host reachable from the Frappe worker, pull the model you want to use, and enter its base URL and exact model name. The default URL `http://127.0.0.1:11434` only works when Ollama and the Frappe worker run on the same host. If Frappe runs in a container, use an address that is reachable from that container.
+
+**Google Gemini**
+
+Gemini has two authentication options depending on your usage requirements.
 
 **Free Tier (recommended for testing)**
 
@@ -119,22 +127,26 @@ The free tier is the fastest way to get started. Generate your API key at [aistu
 
 For high-volume or production use, Vertex AI provides a more scalable and reliable backend. Set up your Google Cloud environment following the [Vertex AI getting started guide](https://cloud.google.com/vertex-ai/docs/start/cloud-environment), then enter the corresponding credentials in changAI Settings.
 
-**Step 3 — Choose a  Mode**
+**QWEN3**
 
-In addition to the Gemini configuration, changAI supports a Remote Mode that offloads the full pipeline to Replicate .
+QWEN3 generation uses Replicate. Enter the deployment URL and API token under the Remote Server tab. The **Remote** toggle separately controls whether schema and entity retrieval also use the configured Replicate services.
+
+**Step 3 — Choose a Retrieval Mode**
+
+Retrieval can run locally or use the configured Replicate services independently of the selected AI provider.
 
 **Local Mode**
 
-Schema retrieval runs on your own server and SQL generation is handled by Gemini. This keeps your schema data on-premise and is the default recommended setup.
+Schema retrieval runs on your own server and SQL generation is handled by the selected provider. With Ollama, both retrieval and generation can remain on infrastructure you control.
 
 1. Uncheck the **Remote** toggle in changAI Settings
-2. Confirm your Gemini credentials are saved from Step 2
+2. Confirm the selected provider is configured as described in Step 2
 3. Save the settings
 
 **Remote Mode**
 > **Warning:** Remote Mode is currently in an **Alpha/Non-Stable state**.
 
-Both schema retrieval and SQL generation are handled by remote Replicate server using the Qwen3 model. This is a fully hosted pipeline with no local model dependency.
+Schema and entity retrieval use the configured Replicate services. Generation continues to use the provider selected in the **AI Provider** field; select QWEN3 for an entirely Replicate-backed flow.
 
 1. Check the **Remote** toggle in changAI Settings
 2. Under the Remote tab, fill in the following fields:
@@ -142,8 +154,7 @@ Both schema retrieval and SQL generation are handled by remote Replicate server 
    - Prediction URL
    - Version IDs 
 3. Save the settings
-> 📺 **Full walkthrough:** [YouTube Setup Guide](https://youtu.be/fFxyAY_sVNs)  
-> 📖 **Full docs:** [docs.claudion.com](https://docs.claudion.com/Claudion-Docs/changaisetup)
+> **Setup documentation:** [Project configuration](#configuration)
 
 **Step 4 — Enable Voice Assistant (Optional)**
 
@@ -170,8 +181,7 @@ changAI ships pre-configured with the standard ERPNext schema, so core modules w
 
 To do this, enter an [Anthropic Claude API key](https://console.anthropic.com/) in the Remote tab of changAI Settings, then click **Update Schema** in the Training tab. changAI will analyse your customisations and incorporate them into its schema context.
 
-> Full video walkthrough: [youtu.be/twD-4scH-EM](https://youtu.be/twD-4scH-EM)  
-> Full documentation: [docs.claudion.com](https://docs.claudion.com/Claudion-Docs/changaisetup)
+> Full documentation: [Project configuration](#configuration)
 
 
 ## Usage
@@ -228,7 +238,7 @@ changAI ships pre-configured with the standard ERPNext schema, so modules like A
 The free tier available at Google AI Studio is well suited for testing and low-volume usage. For production use with higher query volumes or stricter reliability requirements, Vertex AI is recommended.
 
 **Should I use Local Mode or Remote Mode?**  
-Use Local Mode if you want schema retrieval to stay on your own server and use Gemini for SQL generation. Use Remote Mode if you prefer a fully hosted pipeline through Replicate using Qwen3 with no local model dependency.
+Use Local Mode if you want schema retrieval to stay on your own server; generation can use Gemini, Ollama, or QWEN3. Enable Remote Mode when you want schema and entity retrieval to use the configured Replicate services as well.
 
 **Is the Voice Assistant required?**  
 No. Amazon Polly voice output is entirely optional. changAI works fully as a text-based interface without it. Enable it only if you want query results read aloud.
@@ -237,10 +247,10 @@ No. Amazon Polly voice output is entirely optional. changAI works fully as a tex
 Yes. The Master Data sync is required before changAI can recognise specific records in your queries, such as customer names, item codes, or supplier names. Without it, the AI will not return accurate results for queries that reference specific data.
 
 **My answer looks wrong. What should I do?**  
-Open the Debug Tab and inspect the generated SQL and the fields that were retrieved. This usually shows whether the issue is with schema retrieval or the SQL that was produced. You can also report the query, the output you received, and the debug output via the [GitHub Issues](https://github.com/ERPGulf/changAI/issues) page.
+Open the Debug Tab and inspect the generated SQL and the fields that were retrieved. This usually shows whether the issue is with schema retrieval or the SQL that was produced. You can also report the query, the output you received, and the debug output via the [GitHub Issues](https://github.com/ambundo-ronald/changai/issues) page.
 
 **The model returned an invalid query or an unexpected error. What should I do?**  
-This can happen when the model fails to identify the correct tables or fields for a particular query. It is a known limitation that affects some queries during the current training phase and will improve as more training data is added over time. If you encounter this, open the Debug Tab, take a screenshot of the full output, and post it as a new issue on the [GitHub Issues](https://github.com/ERPGulf/changAI/issues) page. Include the original query you typed alongside the screenshot. This helps the team identify which queries need better coverage in future training runs.
+This can happen when the model fails to identify the correct tables or fields for a particular query. It is a known limitation that affects some queries during the current training phase and will improve as more training data is added over time. If you encounter this, open the Debug Tab, take a screenshot of the full output, and post it as a new issue on the [GitHub Issues](https://github.com/ambundo-ronald/changai/issues) page. Include the original query you typed alongside the screenshot. This helps the team identify which queries need better coverage in future training runs.
 
 **The embedding model did not download. What do I do?**  
 Go to changAI Settings and click Download Embedding Model manually. Make sure your server has outbound internet access at the time of download. If you are on a restricted network, you may need to whitelist the Hugging Face domain.
@@ -255,21 +265,20 @@ Run the Train Data Automation feature to generate additional training data from 
 ## Links
 
 | | |
-| Setup Walkthrough | [youtu.be/twD-4scH-EM](https://youtu.be/twD-4scH-EM) |
-| Documentation | [docs.claudion.com](https://docs.claudion.com/Claudion-Docs/changaisetup) |
+| Configuration | [Project configuration](#configuration) |
 | Embedding Model | [huggingface.co/hyrinmansoor/changAI-nomic-embed-text-v1.5-finetuned](https://huggingface.co/hyrinmansoor/changAI-nomic-embed-text-v1.5-finetuned) |
 | Dataset | [huggingface.co/datasets/hyrinmansoor/ERP-retrieval-data-modernbert](https://huggingface.co/datasets/hyrinmansoor/ERP-retrieval-data-modernbert) |
-| Issues | [github.com/ERPGulf/changAI/issues](https://github.com/ERPGulf/changAI/issues) |
-| Support | [support@erpgulf.com](mailto:support@erpgulf.com) |
-| Website | [erpgulf.com](https://erpgulf.com) |
+| Issues | [github.com/ambundo-ronald/changai/issues](https://github.com/ambundo-ronald/changai/issues) |
+| Support | [GitHub Issues](https://github.com/ambundo-ronald/changai/issues) |
+| Website | [Project page](https://github.com/ambundo-ronald/changai) |
 
 
 ## Report Bugs
-If you encounter any bugs, please report them on GitHub Issues https://github.com/ERPGulf/changAI/issues. Please include detailed information such as app screenshots, browser console logs to help the project maintainers reproduce and address the issue effectively.
+If you encounter any bugs, please report them on GitHub Issues https://github.com/ambundo-ronald/changai/issues. Please include detailed information such as app screenshots, browser console logs to help the project maintainers reproduce and address the issue effectively.
 
 <div align="center">
 
-Please create issue on Github on any issues or feature requests. You can alway send email to support@erpgulf.com
-MIT License · Actively maintained · Built by [ERPGulf](https://erpgulf.com)
+Please create a GitHub issue for bugs or feature requests.
+MIT License · Actively maintained · Built by [Norwa Group](https://github.com/ambundo-ronald/changai)
 
 </div>

@@ -16,8 +16,8 @@ from sqlglot.schema import MappingSchema
 import jellyfish
 from rapidfuzz import fuzz, process
 _VALUE_TO_FIELD = {}
-CHANGAI_GUIDE_LINK="https://app.erpgulf.com/en/articles/chang-ai-quick-start-guide"
-ERPGULF_LINK = "https://app.erpgulf.com/en/products/chang-ai-an-ai-agent"
+CHANGAI_GUIDE_LINK="https://github.com/ambundo-ronald/changai#configuration"
+PROJECT_LINK = "https://github.com/ambundo-ronald/changai"
 settingsUrl = frappe.utils.get_url(
     "/app/changai-settings/ChangAI%20Settings"
 )
@@ -265,6 +265,7 @@ def is_master_data_changed(last_sync: str, stored_data: list):
     return False
 
 
+@frappe.whitelist(allow_guest=False)
 def check_file_updates(file_name: str):
     RAG_FOLDER = "Home/RAG Sources"
     from changai.changai.api.v2.build_cards_faiss_index_v2 import _read_file_doc
@@ -587,11 +588,14 @@ def get_settings() -> Dict[str, Any]:
         "EMBED_VERSION_ID": settings.embedder_version_id,
         "API_TOKEN": settings.api_token,
         "REMOTE": bool(settings.remote),
+        "prediction_url": settings.prediction_url,
         "deploy_url": settings.deploy_url,
         "entity_retriever": settings.entity_retriever,
         "support_api_url": settings.support_url,
         "get_ticket_details_url": settings.get_ticket_details_url,
         "llm": settings.llm,
+        "ollama_url": settings.ollama_url,
+        "ollama_model": settings.ollama_model,
         "location": settings.gemini_location,
         "retriever_structure": settings.retriever_structure,
         "gemini_project_id": settings.gemini_project_id,

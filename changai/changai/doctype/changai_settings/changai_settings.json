@@ -17,6 +17,9 @@
   "embedder",
   "qwen3_4b_instruct",
   "llm",
+  "ollama_section",
+  "ollama_url",
+  "ollama_model",
   "column_break_irkb",
   "dataset_repo",
   "qwen25_15b",
@@ -100,8 +103,32 @@
    "default": "Gemini",
    "fieldname": "llm",
    "fieldtype": "Select",
-   "label": "LLM",
-   "options": "QWEN3\nGemini"
+   "label": "AI Provider",
+   "options": "Gemini\nOllama\nQWEN3"
+  },
+  {
+   "depends_on": "eval:doc.llm == \"Ollama\"",
+   "fieldname": "ollama_section",
+   "fieldtype": "Section Break",
+   "label": "Ollama"
+  },
+  {
+   "default": "http://127.0.0.1:11434",
+   "depends_on": "eval:doc.llm == \"Ollama\"",
+   "description": "Base URL reachable from the Frappe server. Do not include /api/generate.",
+   "fieldname": "ollama_url",
+   "fieldtype": "Data",
+   "label": "Ollama URL",
+   "mandatory_depends_on": "eval:doc.llm == \"Ollama\""
+  },
+  {
+   "default": "qwen3:4b",
+   "depends_on": "eval:doc.llm == \"Ollama\"",
+   "description": "Name of a model already pulled in Ollama, for example qwen3:4b.",
+   "fieldname": "ollama_model",
+   "fieldtype": "Data",
+   "label": "Ollama Model",
+   "mandatory_depends_on": "eval:doc.llm == \"Ollama\""
   },
   {
    "fieldname": "column_break_irkb",
@@ -132,6 +159,7 @@
    "label": "Gemini_location"
   },
   {
+   "depends_on": "eval:doc.llm == \"Gemini\"",
    "fieldname": "gemini_project_id",
    "fieldtype": "Data",
    "label": "Gemini project ID"
@@ -283,12 +311,14 @@
    "options": "Module Selection"
   },
   {
+   "depends_on": "eval:doc.llm == \"Gemini\"",
    "fieldname": "gemini_json_content",
    "fieldtype": "Code",
    "label": "Service Account Credentials",
    "options": "JSON"
   },
   {
+   "depends_on": "eval:doc.llm == \"Gemini\"",
    "fieldname": "gemini_api_key",
    "fieldtype": "Data",
    "label": "Gemini api key"
@@ -399,6 +429,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.llm == \"Gemini\"",
    "fieldname": "gemini_authentication_free_tier",
    "fieldtype": "Section Break",
    "label": "Gemini Authentication (Free Tier)"

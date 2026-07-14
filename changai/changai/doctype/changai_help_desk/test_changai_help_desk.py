@@ -1,4 +1,4 @@
-# Copyright (c) 2026, ERpGulf and Contributors
+# Copyright (c) 2026, Norwa Group and Contributors
 # See license.txt
 
 # import frappe

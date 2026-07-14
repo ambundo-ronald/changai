@@ -19,7 +19,6 @@ import math
 from pathlib import Path
 from changai.changai.api.v2.schema_utils import convert_yaml_schema_to_sqlglot_meta
 from frappe.utils.file_manager import get_file
-from changai.changai.api.v2.text2sql_pipeline_v2 import call_gemini
 from changai.changai.api.v2.train_data_api import _get_openai_client
 JSON_EXT = ".json"
 SCHEMA_YAML = "schema.yaml"

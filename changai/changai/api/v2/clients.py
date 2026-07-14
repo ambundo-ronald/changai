@@ -8,21 +8,12 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from google.api_core import exceptions as google_exceptions
-from changai.changai.api.v2.schema_utils import (ChangAIConfig, CHANGAI_SETTINGS, CHANGAI_GUIDE_LINK, ERPGULF_LINK, settingsUrl)
+from changai.changai.api.v2.schema_utils import (ChangAIConfig, CHANGAI_SETTINGS, CHANGAI_GUIDE_LINK, PROJECT_LINK, settingsUrl)
 _GEMINI_CLIENT = None
 _GEMINI_CONFIG = None
 APPLICATION_JSON = "application/json"
 MODEL_ID = "gemini-2.5-flash-lite"
 STATUS_200 = 200
-
-
-def call_model(prompt: str, task: str = "llm",sys_prompt: str = "") -> Any:
-    config = ChangAIConfig.get()
-    if config["REMOTE"] and config["llm"] == "QWEN3":
-        return remote_llm_request_deploy_test(prompt=prompt, task=task)
-    else:
-        if config["llm"] == "Gemini":
-            return call_gemini(prompt,sys_prompt)
 
 
 def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout: int = 120):
@@ -44,15 +35,31 @@ def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeo
 
 
 
-def local_llm_request(prompt: str) -> str:
+def local_llm_request(prompt: str, sys_prompt: str = "") -> str:
     config = ChangAIConfig.get()
-    url = f"{config['URL'].rstrip('/')}/api/generate"
-    payload = {"model": config["LOCAL_LLM"], "prompt": prompt, "stream": False}
+    base_url = (config.get("ollama_url") or "").strip()
+    model = (config.get("ollama_model") or "").strip()
+    if not base_url:
+        frappe.throw(_("Ollama URL is missing. Configure it in ChangAI Settings."))
+    if not model:
+        frappe.throw(_("Ollama model is missing. Configure it in ChangAI Settings."))
+
+    url = f"{base_url.rstrip('/')}/api/generate"
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    if sys_prompt:
+        payload["system"] = sys_prompt
     resp = _post_json(url, headers={}, payload=payload, timeout=120)
     if not resp.get("ok"):
-        return f"Error: local LLM call failed ({resp.get('status_code')}): {resp.get('body')}"
+        frappe.throw(
+            _("Ollama request failed ({0}): {1}").format(
+                resp.get("status_code") or "connection error",
+                resp.get("body"),
+            )
+        )
     text = (resp.get("body") or {}).get("response")
-    return (text or "").strip() or "Error: Empty response from local LLM."
+    if not (text or "").strip():
+        frappe.throw(_("Ollama returned an empty response."))
+    return _clean_gemini_response_text(text)
 
 
 def _get_gemini_vertex_config(config):
@@ -67,22 +74,22 @@ def _throw_missing_vertex_field(project_id: str, location: str, credentials_json
         frappe.throw(
             _("Gemini Project ID is missing.<br><br>Please <b> <a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Go to Settings Page</a> </b> and enter your <b>Gemini Project ID</b>.<br>"
             "Check Quick Start Guide 👇:<br><a href='{0}' target='_blank'>Click here</a><br>"
-            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>.").format(CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK),
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>.").format(CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK),
             title=_("Missing Gemini Project ID"),
         )
     if not location:
         frappe.throw(
             _("Gemini Location is missing.<br><br>Please <b><a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Go to Settings Page</a></b> and enter your <b>Gemini Location</b>.<br>"
               "Check Quick Start Guide 👇:<br><a href='{0}' target='_blank'>Click here</a><br>"
-              "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>.").format(CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK),
+              "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>.").format(CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK),
             title=_("Missing Gemini Location"),
         )
     if not credentials_json:
         frappe.throw(
             _("Service Account Credentials are missing.<br><br>Please <b><a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Go to Settings Page</a></b> and enter your <b>Service Account Credential</b>.<br>"
             "Check Quick Start Guide 👇:<br><a href='{0}' target='_blank'>Click here</a>"
-            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
-).format(CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK),
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
+).format(CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK),
             title=_("Missing Service Account Credentials"),
         )
 
@@ -108,9 +115,9 @@ def _get_api_key_client(config):
                 "and <b>Service Account Credentials</b> in <b><a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Got to Settings Page</a></b>.<br>"
                 "ChangAI Quick Start Guide 👇:<br>"
                 "<a href='{0}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
+                "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
 
-            ).format(CHANGAI_GUIDE_LINK,settingsUrl,ERPGULF_LINK),
+            ).format(CHANGAI_GUIDE_LINK,settingsUrl,PROJECT_LINK),
             title=_("Gemini Authentication Not Configured"),
         )
 
@@ -147,8 +154,8 @@ def _handle_gemini_api_exception(e: Exception) -> None:
         frappe.throw(
             _("Gemini API quota exceeded.<br><br>Please wait and try again or upgrade your plan.<br>Check Quick Start Guide 👇:<br>"
             "<a href='{0}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
-).format(CHANGAI_GUIDE_LINK,ERPGULF_LINK),
+            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
+).format(CHANGAI_GUIDE_LINK,PROJECT_LINK),
 
             title=_("Gemini Quota Exceeded"),
         )
@@ -156,16 +163,16 @@ def _handle_gemini_api_exception(e: Exception) -> None:
         frappe.throw(
             _("Gemini API key is invalid.<br><br>Please go to <b>ChangAI Settings</b> and enter a valid <b>Gemini API Key</b>.<br>"
             "Check ChangAI Quick Start Guide 👇:<br><a href='{0}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
-).format(CHANGAI_GUIDE_LINK,ERPGULF_LINK),
+            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
+).format(CHANGAI_GUIDE_LINK,PROJECT_LINK),
             title=_("Invalid Gemini API Key"),
         )
     if isinstance(e, google_exceptions.PermissionDenied):
         frappe.throw(
             _("Gemini API permission denied.<br><br>Please check your API key permissions.<br>"
             "Check ChangAI Quick Start Guide 👇:<br><a href='{0}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>."
-).format(CHANGAI_GUIDE_LINK,ERPGULF_LINK),
+            "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>."
+).format(CHANGAI_GUIDE_LINK,PROJECT_LINK),
             title=_("Gemini Permission Denied"),
         )
     if isinstance(e, google_exceptions.InvalidArgument):
@@ -173,7 +180,7 @@ def _handle_gemini_api_exception(e: Exception) -> None:
             _("Invalid request to Gemini API: {0}<br>"
             "Check ChangAI Quick Start Guide 👇:<br>"
             "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>.").format(str(e),CHANGAI_GUIDE_LINK,ERPGULF_LINK),
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>.").format(str(e),CHANGAI_GUIDE_LINK,PROJECT_LINK),
             title=_("Gemini Invalid Request"),
         )
 
@@ -182,7 +189,7 @@ def _handle_gemini_api_exception(e: Exception) -> None:
         _("Gemini API error: {0}<br>"
         "Check ChangAI Quick Start Guide 👇:<br>"
         "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-        "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>ERPGulf.com</a></b>.").format(str(e),CHANGAI_GUIDE_LINK,ERPGULF_LINK),
+        "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Project page</a></b>.").format(str(e),CHANGAI_GUIDE_LINK,PROJECT_LINK),
         title=_("Gemini API Error"),
     )
 
@@ -276,7 +283,7 @@ def remote_embedder_request(formatted_q: str) -> Union[List[Any], str]:
         "Prefer": "wait",
         "Authorization": f"Bearer {config['API_TOKEN']}",
     }
-    response = _post_json(config["URL"], headers, payload)
+    response = _post_json(config["prediction_url"], headers, payload)
     try:
         if response:
             return response["body"]["output"]
@@ -286,11 +293,18 @@ def remote_embedder_request(formatted_q: str) -> Union[List[Any], str]:
 
 def call_model(prompt: str, task: str = "llm",sys_prompt: str = "") -> Any:
     config = ChangAIConfig.get()
-    if config["REMOTE"] and config["llm"] == "QWEN3":
+    provider = (config.get("llm") or "Gemini").strip()
+    if provider == "QWEN3":
+        if not (config.get("deploy_url") or "").strip():
+            frappe.throw(_("QWEN3 deployment URL is missing. Configure it in ChangAI Settings."))
+        if not (config.get("API_TOKEN") or "").strip():
+            frappe.throw(_("QWEN3 API token is missing. Configure it in ChangAI Settings."))
         return remote_llm_request_deploy_test(prompt=prompt, task=task)
-    else:
-        if config["llm"] == "Gemini":
-            return call_gemini(prompt,sys_prompt)
+    if provider == "Ollama":
+        return local_llm_request(prompt, sys_prompt)
+    if provider == "Gemini":
+        return call_gemini(prompt,sys_prompt)
+    frappe.throw(_("Unsupported AI provider: {0}").format(provider))
 
 
 def call_gemini(prompt: str,sys_prompt: str) -> Union[str, Dict[str, Any]]:

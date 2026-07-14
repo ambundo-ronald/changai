@@ -1,7 +1,7 @@
 [project]
 name = "changai"
 authors = [
-    { name = "ERPGulf", email = "support@erpgulf.com"}
+    { name = "Norwa Group"}
 ]
 description = "ChangAI"
 readme = "README.md"

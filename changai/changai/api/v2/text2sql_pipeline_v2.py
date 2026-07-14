@@ -32,7 +32,7 @@ from changai.changai.api.v2.schema_utils import (
     validate_sql_against_mapping,
     hits_to_schema_context,
     CHANGAI_GUIDE_LINK,
-    ERPGULF_LINK,
+    PROJECT_LINK,
     settingsUrl,
     publish_pipeline_update,
     ChangAIConfig
@@ -54,14 +54,12 @@ from changai.changai.api.v2.store_chats import (
 from changai.changai.api.v2.format_output import (
     format_data
 )
-from changai.changai.api.v2.clients import call_model,gemini_client
+from changai.changai.api.v2.clients import call_model
 from changai.changai.api.v2.non_erp_handler import non_erp_response
 from frappe.desk.reportview import build_match_conditions
 from frappe import _
 from frappe.desk.query_report import get_script
 from changai.changai.api.v2.clients import (
-    call_model,
-    call_gemini,
     remote_embedder_request,
 )
 STATUS_200 = 200
@@ -456,7 +454,7 @@ def create_entity(state:SQLState):
     "Detecting doctype for creation",
     "Detecting doctype for creation",
     done=True)
-    res = call_gemini(prompt,"")
+    res = call_model(prompt, "llm", "")
     try:
         if isinstance(res, str):
             res = res.replace("```json", "").replace("```", "").strip()
@@ -499,8 +497,8 @@ def check_update(res:dict):
             "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
             "Check Quick Start Guide Here 👇:<br>"
             "<a href='{1}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
-        ).format(settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
+            "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Project page</a>"
+        ).format(settingsUrl, CHANGAI_GUIDE_LINK, PROJECT_LINK))
 
     if res.get("is_stale"):
         frappe.throw(_(
@@ -511,8 +509,8 @@ def check_update(res:dict):
             "and click on the <b>Update Master Data</b> button in the Training tab.<br><br>"
             "Check Quick Start Guide Here 👇:<br>"
             "<a href='{2}' target='_blank' rel='noopener noreferrer' style='color: #1e90ff;'>Click here</a><br>"
-            "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>ERPGulf.com</a>"
-        ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, ERPGULF_LINK))
+            "<a href='{3}' target='_blank' rel='noopener noreferrer' style='color:#1e90ff;'>Project page</a>"
+        ).format(res.get("days"), settingsUrl, CHANGAI_GUIDE_LINK, PROJECT_LINK))
 
 def generate_orm(state: SQLState) -> SQLState:
     from changai.changai.api.v2.auto_gen_api import update_masterdata
@@ -762,13 +760,13 @@ def detect_specific_entities(state: SQLState) -> SQLState:
 
 def routeNonErpToAI(state: SQLState):
     question= state["question"]
-    sys_prompt = """You are ChangAI, an intelligent assistant powered by ERPGulf. 
+    sys_prompt = """You are ChangAI, an intelligent assistant from Norwa Group.
 The user has asked a general question that is not related to ERP. 
 Answer the question clearly and helpfully.
-Always mention that you are ChangAI by ERPGulf when introducing yourself."""
+Always mention that you are ChangAI from Norwa Group when introducing yourself."""
     if frappe.utils.cint(state.get("sendNonErptoAI", 0)) == 1 or state.get("sendNonErptoAI") == "true":
         try:
-            res = call_gemini(question,sys_prompt)
+            res = call_model(question, "llm", sys_prompt)
             return {**state, "non_erp_res": res}
         # except ValidationError as ve:
         #     return {**state,"error":str(ve)}
@@ -935,7 +933,7 @@ def execute_query(sql: str, doctypes: List[str]) -> Any:
     except frappe.PermissionError:
         return {
             "error": _("You do not have permission to access this data. Check the Quick Start Guide here 👇: {0}").format(
-                f'<a href="{CHANGAI_GUIDE_LINK}" target="_blank">Click here</a><br><br><a href="{ERPGULF_LINK}" target="_blank">ERPGulf.com</a>'
+                f'<a href="{CHANGAI_GUIDE_LINK}" target="_blank">Click here</a><br><br><a href="{PROJECT_LINK}" target="_blank">Project page</a>'
             )        }
     except Exception as e:
         return {"error": f"SQL Execution Failed: {e}\n Check Quick Start Guide Here 👇:\n {CHANGAI_GUIDE_LINK}"}
@@ -1166,7 +1164,7 @@ def retry_sql(sql, error, formatted_q, sql_prompt):
     retry_prompt = SQL_SYS_PROMPT + RETRY_PROMPT
     user_prompt = sql_prompt + RETRY_USER_PROMPT.format(sql=sql,error=error,formatted_q=formatted_q)
     try:
-        rewritten = call_gemini(user_prompt, sys_prompt=retry_prompt)
+        rewritten = call_model(user_prompt, "llm", retry_prompt)
         rewritten_json = json.loads(rewritten)
         retried_sql = clean_sql(rewritten_json.get("sql") or "")
         retried_orm = clean_sql(rewritten_json.get("orm") or "")

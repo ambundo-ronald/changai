@@ -1,8 +1,8 @@
 app_name = "changai"
 app_title = "Changai"
-app_publisher = "ERpGulf"
+app_publisher = "Norwa Group"
 app_description = "Changai"
-app_email = "support@erpgulf.com"
+app_email = ""
 app_license = "mit"
 
 from changai import __version__ as app_version

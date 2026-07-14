@@ -177,7 +177,6 @@
       "tabProcess Payment Reconciliation",
       "tabAccounting Period",
       "tabRepost Allowed Types",
-      "tabZATCA ERPGulf Success Log",
       "tabMonthly Distribution",
       "tabPurchase Receipt",
       "tabSMS Log",
@@ -1422,8 +1421,7 @@
       "tabAdvance Tax",
       "tabProcess Period Closing Voucher",
       "tabUAE VAT Settings",
-      "tabTax Withholding Account",
-      "tabZatca ERPgulf Setting"
+      "tabTax Withholding Account"
     ],
     "correct": false
   },
@@ -1724,7 +1722,6 @@
       "tabBudget Account",
       "tabAccount Closing Balance",
       "tabSales Invoice Payment",
-      "tabZATCA ERPGulf Success Log",
       "tabLedger Merge Accounts",
       "tabAccounting Dimension Filter",
       "tabRepost Accounting Ledger",
